@@ -143,6 +143,28 @@ az webapp restart  -g <rg> -n horizon-app
 
 ---
 
+## Building the image
+
+Don't build locally. `infra/deploy.ps1` uses `az acr build`, which builds in
+Azure using no local disk at all.
+
+A local `docker build` peaks around **6-8 GB** — two base images, the
+scikit-learn/scipy/pandas install, `node_modules`, the ~1.5 GB result, and
+BuildKit keeping every intermediate layer. Attempting one on a machine with
+~2 GB free filled the disk to zero and left Docker Desktop unable to start
+(it could not even prune its own cache to recover). If you do want a local
+build, have **10 GB+ free** first.
+
+Recovering a Docker Desktop wedged by a full disk:
+
+```powershell
+wsl --shutdown
+Remove-Item "$env:LOCALAPPDATA\Docker\wsl\disk\docker_data.vhdx" -Force
+# restart Docker Desktop; it recreates the disk empty, losing all local images
+```
+
+---
+
 ## Redeploying code
 
 ```powershell

@@ -9,7 +9,7 @@ are therefore still outstanding.
 | Phase | State |
 |---|---|
 | 1 Strip the desktop path | done -- 1,808 lines removed |
-| 2 Containerize | code done; **image never built** (no Docker here) |
+| 2 Containerize | code done; image built by `az acr build` on first deploy, **not locally** (see note) |
 | 3 Auth + authorization | done, verified against a running app |
 | 4 Role split | done, verified |
 | 5 Publish/bundle pipeline | done, round trip verified incl. edit preservation |
@@ -109,7 +109,15 @@ honest-evaluation gate and get *more* important once retraining is offline.
   installs all three requirement sets, entrypoint launches all three processes.
 - `.dockerignore` (mirror the `.gitignore` allowlist logic).
 - Add `GET /healthz` on the gateway for Azure's probe.
-- **Gate:** `docker run` locally, all endpoints answer through the container.
+- **Gate:** ~~`docker run` locally~~ -- **dropped deliberately.** The image is
+  built by `az acr build` server-side during deploy, so a local build is only
+  ever a pre-check, and this machine cannot afford one: a build peaks around
+  6-8 GB (two base images, the sklearn/scipy/pandas install, node_modules, the
+  ~1.5 GB result, plus BuildKit caching every intermediate layer) against ~2 GB
+  free. An attempt on 2026-09-08 filled the disk to 0 bytes and wedged Docker
+  Desktop, which then could not start to prune its own cache. The Dockerfile is
+  therefore validated on the first ACR build instead -- expect to iterate there
+  rather than assuming it is correct.
 
 ## Phase 3 — Security
 

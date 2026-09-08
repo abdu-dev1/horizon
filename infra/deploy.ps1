@@ -40,10 +40,27 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 
 function Step($n, $msg) { Write-Host "`n== $n  $msg" -ForegroundColor Cyan }
 
-foreach ($tool in 'az', 'docker') {
-    if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
-        throw "$tool is not installed or not on PATH. See the header of this script."
+# Docker Desktop's per-user installer does NOT add its CLI to PATH (observed
+# on this project's own dev machine: Docker Desktop running, docker.exe present
+# under %LOCALAPPDATA%, and `Get-Command docker` still failing). Look there
+# before giving up, so a working install is not reported as missing.
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    $dockerBin = Join-Path $env:LOCALAPPDATA 'Programs\DockerDesktop\resources\bin'
+    if (Test-Path (Join-Path $dockerBin 'docker.exe')) {
+        Write-Host "Using Docker CLI from $dockerBin (not on PATH)" -ForegroundColor Yellow
+        $env:Path = "$dockerBin;$env:Path"
     }
+}
+
+# `az acr build` does the image build server-side, so Docker is not strictly
+# required for a deploy -- only for building/running the image locally. Warn
+# rather than block.
+if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
+    throw 'Azure CLI (az) is not installed or not on PATH. See the header of this script.'
+}
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Write-Host 'Docker not found. Not fatal: the image is built by `az acr build` ' +
+               'server-side. You just cannot test the image locally.' -ForegroundColor Yellow
 }
 
 Step '1/4' 'ensure the resource group exists'
