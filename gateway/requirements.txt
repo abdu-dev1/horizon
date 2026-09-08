@@ -1,3 +1,9 @@
-fastapi>=0.104
-uvicorn>=0.24
-httpx>=0.27
+# Gateway (reverse proxy). No ML dependencies by design -- it never imports
+# either backend, it forwards HTTP to them. Pinned to match the engines'
+# fastapi/starlette so the single container image resolves one consistent set.
+
+fastapi==0.104.1
+uvicorn==0.24.0
+starlette==0.27.0
+pydantic==2.5.2
+httpx==0.28.1

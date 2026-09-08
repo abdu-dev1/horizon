@@ -1,7 +1,20 @@
-fastapi>=0.104
-uvicorn>=0.24
-scikit-learn>=1.3
-pandas>=2.1
-numpy>=1.26
-joblib>=1.3
-openpyxl>=3.1
+# New Business engine. Pinned exactly for the same reason as
+# backend/requirements.txt: models/nb_latest.joblib is a pickled scikit-learn
+# pipeline (~148 MB) and sklearn makes no cross-version pickle guarantee, so
+# the ML stack here must stay the version set the model was fitted with.
+# The two engines are kept on identical versions deliberately -- they run in
+# the same image, so a divergence would be unresolvable at install time.
+
+fastapi==0.104.1
+uvicorn==0.24.0
+starlette==0.27.0
+pydantic==2.5.2
+
+scikit-learn==1.3.2
+numpy==1.26.2
+scipy==1.16.3
+pandas==2.1.3
+joblib==1.3.2
+threadpoolctl==3.6.0
+
+openpyxl==3.1.5

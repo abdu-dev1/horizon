@@ -1,8 +1,24 @@
-fastapi>=0.104
-uvicorn>=0.24
-scikit-learn>=1.3
-pandas>=2.1
-numpy>=1.26
-joblib>=1.3
-openpyxl>=3.1
-python-multipart>=0.0.9
+# Renewal engine. Pinned exactly, not floored (>=), for one specific reason:
+# models/real_latest.joblib is a PICKLE of a fitted scikit-learn pipeline, and
+# scikit-learn gives no cross-version pickle-compatibility guarantee. With
+# "scikit-learn>=1.3" a fresh container build would install a much newer
+# sklearn and load a model trained on 1.3.2 -- best case an
+# InconsistentVersionWarning nobody reads, worst case silently different
+# predictions or an outright failure at load. The ML stack below is the
+# version set the shipped model was fitted with; changing any of it means
+# retraining and re-publishing, not just editing this file.
+
+fastapi==0.104.1
+uvicorn==0.24.0
+starlette==0.27.0
+pydantic==2.5.2
+python-multipart==0.0.32
+
+scikit-learn==1.3.2
+numpy==1.26.2
+scipy==1.16.3
+pandas==2.1.3
+joblib==1.3.2
+threadpoolctl==3.6.0
+
+openpyxl==3.1.5

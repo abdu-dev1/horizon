@@ -45,7 +45,24 @@ NB_DIR = ROOT / "NewBusiness" / "backend"
 
 # The gateway's public bind. 0.0.0.0 in a container; loopback for local dev.
 HOST = os.environ.get("HORIZON_HOST", "127.0.0.1").strip() or "127.0.0.1"
-GATEWAY_PORT = int(os.environ.get("HORIZON_PORT", "8000"))
+
+
+def _gateway_port() -> int:
+    """HORIZON_PORT wins; otherwise honour whatever the platform injected.
+
+    Azure App Service (and most PaaS) tells a custom container which port to
+    listen on via PORT / WEBSITES_PORT rather than letting the image choose.
+    Reading those as fallbacks means the same image runs unmodified whether the
+    platform dictates the port or we do.
+    """
+    for var in ("HORIZON_PORT", "PORT", "WEBSITES_PORT"):
+        raw = os.environ.get(var, "").strip()
+        if raw.isdigit():
+            return int(raw)
+    return 8000
+
+
+GATEWAY_PORT = _gateway_port()
 
 # Internal only -- deliberately not configurable, and never bound off-host.
 INTERNAL_HOST = "127.0.0.1"
@@ -120,12 +137,29 @@ def main() -> None:
         threading.Thread(target=_open_browser_when_ready, daemon=True).start()
 
     def _watch_engines() -> None:
-        """Exit the whole app if either engine dies after startup."""
+        """Exit the whole app if either engine dies after startup.
+
+        Reaps the SURVIVING engines before exiting. os._exit() is the only way
+        to bring the process down from a non-main thread without waiting on
+        uvicorn's own shutdown, but it skips main()'s `finally` -- so without
+        this loop the other engine is orphaned and holds its port until it is
+        killed by hand (observed: killing the NB engine left the renewal engine
+        listening on 8010 with the launcher already gone).
+        """
         while True:
             for proc, label in engines:
                 if proc.poll() is not None:
                     print(f"\n  !! the {label} backend exited (code "
                           f"{proc.returncode}) - shutting down", flush=True)
+                    for other, other_label in engines:
+                        if other is proc or other.poll() is not None:
+                            continue
+                        print(f"  Stopping {other_label} backend...", flush=True)
+                        other.terminate()
+                        try:
+                            other.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            other.kill()
                     os._exit(1)
             time.sleep(2.0)
 

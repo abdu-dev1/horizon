@@ -22,14 +22,16 @@ see frontend/src/App.jsx), so no separate static serving is needed here.
 """
 from __future__ import annotations
 
+import os
+
 from starlette.background import BackgroundTask
 
 import httpx
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
-RENEWAL_BASE = "http://127.0.0.1:8010"
-NB_BASE = "http://127.0.0.1:8011"
+RENEWAL_BASE = os.environ.get("HORIZON_RENEWAL_BASE", "http://127.0.0.1:8010").rstrip("/")
+NB_BASE = os.environ.get("HORIZON_NB_BASE", "http://127.0.0.1:8011").rstrip("/")
 
 # Standard HTTP hop-by-hop headers — never forwarded by a proxy (RFC 7230
 # §6.1). Everything else (content-length, content-encoding, content-type...)
@@ -75,6 +77,34 @@ async def _proxy(request: Request, base: str, strip_prefix: str = "") -> Streami
         headers=dict(resp_headers),
         background=BackgroundTask(upstream_resp.aclose),
     )
+
+
+@app.get("/healthz")
+async def healthz():
+    """Liveness probe for the platform. Declared BEFORE the catch-all routes
+    below, which would otherwise proxy it to the renewal backend.
+
+    Deliberately checks BOTH engines rather than just answering 200 from the
+    gateway process: the gateway is a thin proxy that stays perfectly healthy
+    while an engine behind it is dead, so a self-only check would report green
+    on a dashboard that 502s half its pages. Returning 503 when an engine is
+    unreachable is what lets the platform restart the container instead.
+
+    Must be excluded from authentication -- an authenticated health path fails
+    the probe, which the platform reads as a dead container and restarts in a
+    loop. See DEPLOYMENT_PLAN.md, Phase 3.
+    """
+    engines = {"renewal": RENEWAL_BASE, "new_business": NB_BASE}
+    results: dict[str, str] = {}
+    for name, base in engines.items():
+        try:
+            r = await _client.get(f"{base}/api/health", timeout=5.0)
+            results[name] = "up" if r.status_code == 200 else f"http {r.status_code}"
+        except Exception as exc:
+            results[name] = f"unreachable ({type(exc).__name__})"
+    ok = all(v == "up" for v in results.values())
+    return JSONResponse({"status": "ok" if ok else "degraded", "engines": results},
+                        status_code=200 if ok else 503)
 
 
 _METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]

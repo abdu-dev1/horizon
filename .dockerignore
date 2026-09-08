@@ -1,0 +1,59 @@
+# Keep the build context to source only. This is a security boundary as much
+# as a speed one: anything listed here cannot be COPYed into an image layer
+# even by mistake, and layers are readable by anyone who can pull the image.
+#
+# The worktree holds ~100 real client workbooks (named groups, premiums, loss
+# ratios) and the derived CSVs, so those are excluded by extension as well as
+# by directory -- a new data drop in a new folder is still kept out.
+
+# --- client data: raw sources ---
+All-Data/
+FillData/
+FillData---DONE/
+newData/
+upload*/
+data/
+NewBusiness/*.xlsx
+*.xlsx
+*.xlsm
+*.xls
+*.xlsb
+
+# --- client data: derived + models (mounted at runtime, never baked in) ---
+**/data/
+**/models/
+*.csv
+*.joblib
+*.pkl
+*.pickle
+*.parquet
+
+# --- build output + local caches (the image builds its own) ---
+frontend/dist/
+frontend/node_modules/
+**/node_modules/
+**/__pycache__/
+**/*.pyc
+.venv/
+venv/
+**/dist/
+**/build/
+
+# --- vcs, editor, logs, scratch ---
+.git/
+.gitignore
+.vscode/
+.idea/
+*.log
+*.bak
+*.bak_*
+**/backup_*/
+**/_seed_stage/
+**/_state_backup*/
+**/_removed_synthetic*/
+test/
+
+# --- docs / plans: not needed at runtime ---
+*.md
+Dockerfile
+.dockerignore
