@@ -77,7 +77,14 @@ def resolve(headers) -> Identity | None:
     `headers` is any case-insensitive mapping (Starlette's request.headers).
     """
     if AUTH_MODE == "dev":
-        return Identity(email=DEV_USER, is_admin=_is_admin(DEV_USER))
+        # Admin by default in dev. Withholding the role here would buy no
+        # security -- dev mode already means "no sign-in at all" -- while
+        # making the admin pages unreachable on localhost, which is where they
+        # get built. The boundary is the MODE, and the Dockerfile pins
+        # easyauth, so the deployed artifact never takes this branch.
+        # Set HORIZON_DEV_ADMIN=0 to check the standard-user view locally.
+        dev_admin = os.environ.get("HORIZON_DEV_ADMIN", "1") != "0"
+        return Identity(email=DEV_USER, is_admin=dev_admin)
 
     email = (headers.get(EASY_AUTH_USER_HEADER) or "").strip()
     if not email:
