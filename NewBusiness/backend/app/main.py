@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+
 from fastapi.staticfiles import StaticFiles
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -27,13 +27,9 @@ from app import data_quality_nb, nb_mode  # noqa: E402
 
 FRONTEND_DIST = BACKEND_DIR.parent / "frontend" / "dist"  # standalone-dev only
 
+# No CORS middleware -- see the matching note in backend/app/main.py. This
+# engine is loopback-only and is only ever reached through the gateway.
 app = FastAPI(title="Horizon — New Business Win Likelihood", version="0.1")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 STATE: dict = {"nb": None}
 

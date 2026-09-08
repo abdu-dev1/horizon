@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
+
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -32,13 +32,13 @@ FRONTEND_DIST = frontend_dist_dir()
 sys.path.insert(0, str(BACKEND_DIR))
 import upload_feed  # noqa: E402  (backend/upload_feed.py — the one-file upload feed)
 
+# No CORS middleware, deliberately. This backend is never called cross-origin:
+# in production the gateway serves the SPA and proxies the API from the same
+# origin, and in dev Vite proxies both prefixes server-side (see
+# frontend/vite.config.js). The previous `allow_origins=["*"]` allowed any
+# website to read this book -- client names, premiums, loss ratios -- from a
+# signed-in user's browser.
 app = FastAPI(title="Horizon — Crumdale Renewal Forecasting", version="1.1")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 STATE: dict = {"real": None}
 

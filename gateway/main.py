@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 
+import auth
 from starlette.background import BackgroundTask
 
 import httpx
@@ -45,6 +46,35 @@ app = FastAPI(title="Horizon Gateway")
 _client: httpx.AsyncClient | None = None
 
 
+@app.middleware("http")
+async def _authenticate(request: Request, call_next):
+    """Resolve identity once per request and enforce the admin policy here,
+    ahead of any proxying -- see auth.py for why this lives in the gateway
+    rather than in each backend."""
+    path = request.url.path
+    if path in auth.PUBLIC_PATHS:
+        return await call_next(request)
+
+    identity = auth.resolve(request.headers)
+    if identity is None:
+        # easyauth mode with no principal header: Easy Auth is not in front of
+        # this container, so the app is exposed. Fail closed and say so.
+        return JSONResponse(
+            {"detail": "Not authenticated. This deployment expects Azure App "
+                       "Service Authentication (Entra ID) in front of it."},
+            status_code=401,
+        )
+
+    if auth.requires_admin(path, request.method) and not identity.is_admin:
+        return JSONResponse(
+            {"detail": "Administrator access required.", "user": identity.email},
+            status_code=403,
+        )
+
+    request.state.identity = identity
+    return await call_next(request)
+
+
 @app.on_event("startup")
 async def _startup():
     global _client
@@ -63,7 +93,17 @@ async def _proxy(request: Request, base: str, strip_prefix: str = "") -> Streami
         path = path[len(strip_prefix):] or "/"
     url = f"{base}{path}"
     body = await request.body()
-    headers = [(k, v) for k, v in request.headers.items() if k.lower() != "host"]
+
+    # Drop `host` (the upstream needs its own) and every inbound X-Horizon-*
+    # header. The latter is a security boundary, not tidiness: the engines
+    # trust X-Horizon-Is-Admin, so a client that could set it would self-
+    # promote. Identity is re-derived here and re-injected below.
+    headers = [(k, v) for k, v in request.headers.items()
+               if k.lower() != "host" and not k.lower().startswith(auth.INJECT_PREFIX)]
+    identity = getattr(request.state, "identity", None)
+    if identity is not None:
+        headers.append((auth.INJECT_USER_HEADER, identity.email))
+        headers.append((auth.INJECT_ADMIN_HEADER, "1" if identity.is_admin else "0"))
 
     upstream_req = _client.build_request(
         request.method, url, headers=headers,
@@ -105,6 +145,21 @@ async def healthz():
     ok = all(v == "up" for v in results.values())
     return JSONResponse({"status": "ok" if ok else "degraded", "engines": results},
                         status_code=200 if ok else 503)
+
+
+@app.get("/api/me")
+async def me(request: Request):
+    """Who the caller is and whether they are an admin.
+
+    Answered by the gateway rather than proxied, so there is a single
+    implementation of identity for both products. The SPA calls this once on
+    load to decide which pages to show -- but note that hiding a page is
+    presentation only; the enforcement is the middleware above, which does not
+    care what the client chose to render.
+    """
+    identity = request.state.identity
+    return {"email": identity.email, "is_admin": identity.is_admin,
+            "auth_mode": auth.AUTH_MODE}
 
 
 _METHODS = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
