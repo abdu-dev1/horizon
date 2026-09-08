@@ -12,7 +12,6 @@ export default function NbModel({ data, onDataChange }) {
   const { metrics } = data;
   const m = metrics.metrics;
   const reliability = metrics.band_reliability;
-  const [retraining, setRetraining] = useState(false);
   const [toast, setToast] = useState(null);
 
   const historyData = (metrics.history ?? []).map((h) => ({
@@ -21,19 +20,9 @@ export default function NbModel({ data, onDataChange }) {
     "PR AUC": h.metrics?.pr_auc,
   }));
 
-  const handleRetrain = async () => {
-    setRetraining(true);
-    try {
-      const result = await apiNb.retrain();
-      await onDataChange?.();
-      setToast(`Model ${result.version} trained — ROC AUC ${result.metrics.roc_auc.toFixed(3)}`);
-    } catch (e) {
-      setToast(`Retrain failed: ${e.message}`);
-    } finally {
-      setRetraining(false);
-      setTimeout(() => setToast(null), 6000);
-    }
-  };
+  // No retrain handler here any more: training moved off the server entirely
+  // (see api.js / DEPLOYMENT_PLAN.md). Installing a reviewed model is the
+  // PublishPanel above this card.
 
   return (
     <>
@@ -62,10 +51,6 @@ export default function NbModel({ data, onDataChange }) {
       <div className="card">
         <div className="card-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span>Model Version History</span>
-          <button className="btn btn-primary" onClick={handleRetrain} disabled={retraining}>
-            <RefreshCw size={14} style={retraining ? { animation: "spin 0.9s linear infinite" } : {}} />
-            {retraining ? "Retraining…" : "Retrain Now"}
-          </button>
         </div>
         <div className="card-sub">
           Ensemble of Random Forest + Extra Trees + HistGradientBoosting (soft-voting, calibrated) —

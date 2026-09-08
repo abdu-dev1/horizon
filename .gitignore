@@ -30,6 +30,7 @@ data/
 upload*/
 test/
 dist_combined/
+dist_bundles/
 node_modules/
 **/_seed_stage/
 **/_seed_stage_data/

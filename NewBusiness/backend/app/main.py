@@ -13,17 +13,38 @@ this file itself never changes for that; the gateway does the mounting.
 """
 from __future__ import annotations
 
+import shutil
 import sys
+import tempfile
+import zipfile
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 
 from fastapi.staticfiles import StaticFiles
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
-from app import data_quality_nb, nb_mode  # noqa: E402
+from app import bundle, data_quality_nb, nb_mode  # noqa: E402
+
+
+@contextmanager
+def _spooled(file: UploadFile):
+    """Land an upload on disk so zipfile can seek it, and always clean up.
+
+    Bundles carry a ~148 MB model, so this is streamed to a temp file rather
+    than read into memory.
+    """
+    tmp = Path(tempfile.mkdtemp()) / "bundle.zip"
+    try:
+        with tmp.open("wb") as fh:
+            shutil.copyfileobj(file.file, fh)
+        yield tmp
+    finally:
+        shutil.rmtree(tmp.parent, ignore_errors=True)
 
 FRONTEND_DIST = BACKEND_DIR.parent / "frontend" / "dist"  # standalone-dev only
 
@@ -135,18 +156,79 @@ def model_metrics():
     }
 
 
-@app.post("/api/retrain")
-def retrain():
-    """Re-run the ETL + train + build pipeline and hot-swap the served state."""
-    import build_book
-    import etl_nb
-    import train_nb
+# There is deliberately no /api/retrain here any more. It used to run
+# etl_nb.build() + train_nb.train_and_save() + build_book.build() inline in the
+# request, which cannot work in a deployed environment: the pipeline takes
+# minutes (measured ~4) against a hard 230-second platform request timeout, it
+# would hold the web process's memory while training, and it needs the raw
+# client workbooks the server does not and should not have. More importantly
+# the ETL needs human judgment -- see DEPLOYMENT_PLAN.md. Retraining happens on
+# an admin's laptop; the endpoints below install the result.
 
-    etl_nb.build()
-    payload = train_nb.train_and_save(verbose=False)
-    build_book.build()
+
+@app.get("/api/admin/status")
+def admin_status():
+    """What is currently live, for the Admin page."""
+    cur = _cur()
+    latest = cur["registry"][-1] if cur["registry"] else {}
+    hist = nb_mode.DATA / "nb_history.csv"
+    return {
+        "product": "new_business",
+        "model_version": cur["model_version"],
+        "trained_at": latest.get("trained_at"),
+        "metrics": cur["metrics"],
+        "band_reliability": latest.get("band_reliability"),
+        "history_rows": latest.get("n_history"),
+        "open_quotes": len(cur.get("groups") or []),
+        "data_updated": (
+            datetime.fromtimestamp(hist.stat().st_mtime, timezone.utc).isoformat(timespec="seconds")
+            if hist.exists() else None),
+    }
+
+
+@app.post("/api/admin/bundle/inspect")
+async def admin_bundle_inspect(file: UploadFile = File(...)):
+    """Validate an uploaded bundle and report what it WOULD install.
+
+    Separate from apply so promoting a model is an explicit decision rather
+    than a side effect of choosing a file -- the admin sees the version, row
+    count and metrics first.
+    """
+    with _spooled(file) as tmp:
+        try:
+            return {"ok": True, "manifest": bundle.inspect(tmp)}
+        except (ValueError, zipfile.BadZipFile) as e:
+            raise HTTPException(400, str(e))
+
+
+@app.post("/api/admin/bundle/apply")
+async def admin_bundle_apply(file: UploadFile = File(...)):
+    """Install a bundle and reload the served state.
+
+    In-app decisions (manual stage edits, auto-expire) are preserved -- see
+    app/bundle.py for why that reconciliation has to happen here, at apply
+    time, and not in a plain reload-from-disk endpoint.
+    """
+    with _spooled(file) as tmp:
+        try:
+            result = bundle.apply(tmp)
+        except (ValueError, zipfile.BadZipFile) as e:
+            raise HTTPException(400, str(e))
     STATE["nb"] = nb_mode.build_state()
-    return {"status": "retrained", "version": payload["version"], "metrics": payload["metrics"]}
+    return {"status": "applied", **result,
+            "model_version": _cur()["model_version"]}
+
+
+@app.post("/api/admin/reload")
+def admin_reload():
+    """Rebuild served state from what is on disk, without installing anything.
+
+    For the case where the data changed underneath the process (a volume
+    restored, a file replaced out of band) and the app should pick it up
+    without a restart.
+    """
+    STATE["nb"] = nb_mode.build_state()
+    return {"status": "reloaded", "model_version": _cur()["model_version"]}
 
 
 # Serve the built frontend when present (standalone dev only — the combined

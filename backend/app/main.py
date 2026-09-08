@@ -11,10 +11,15 @@ fallback, so a broken pipeline is never silently masked by fake data.
 from __future__ import annotations
 
 import csv
+import shutil
 import sys
+import tempfile
 import uuid
+import zipfile
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -23,7 +28,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import data_quality, export, insights, real_mode, recommend
+from . import bundle, data_quality, export, insights, real_mode, recommend
 from .paths import backend_dir, frontend_dist_dir
 
 BACKEND_DIR = backend_dir()
@@ -404,23 +409,86 @@ def upload_commit(body: dict):
     return result
 
 
-@app.post("/api/retrain")
-def retrain():
-    """Monthly refresh: retrain, version, rescore."""
+# No /api/retrain any more -- see the matching note in
+# NewBusiness/backend/app/main.py. It trained inline in the request, which a
+# deployed environment cannot support (minutes of work against a 230-second
+# request timeout, training memory inside the web process, and it needs raw
+# client workbooks the server does not have). Retraining runs on an admin's
+# laptop; these endpoints install the result.
+
+
+@contextmanager
+def _spooled(file: UploadFile):
+    """Land an upload on disk so zipfile can seek it, and always clean up.
+    Streamed rather than read into memory -- a bundle carries the model."""
+    tmp = Path(tempfile.mkdtemp()) / "bundle.zip"
+    try:
+        with tmp.open("wb") as fh:
+            shutil.copyfileobj(file.file, fh)
+        yield tmp
+    finally:
+        shutil.rmtree(tmp.parent, ignore_errors=True)
+
+
+@app.get("/api/admin/status")
+def admin_status():
+    """What is currently live, for the Admin page."""
+    cur = _cur()
+    latest = cur["registry"][-1] if cur["registry"] else {}
+    hist = BACKEND_DIR / "data" / "real_history.csv"
+    return {
+        "product": "renewal",
+        "model_version": cur["model_version"],
+        "trained_at": latest.get("trained_at"),
+        "metrics": cur["metrics"],
+        "wf_metrics": cur.get("wf_metrics"),
+        "groups_in_window": len(cur.get("groups") or []),
+        "data_updated": (
+            datetime.fromtimestamp(hist.stat().st_mtime, timezone.utc).isoformat(timespec="seconds")
+            if hist.exists() else None),
+        # Named so the Admin page can show that hand-made corrections survive a
+        # publish -- see app/bundle.py DELTA_FILES.
+        "local_files": [f for f in bundle.DELTA_FILES
+                        if (BACKEND_DIR / "data" / f).exists()],
+    }
+
+
+@app.post("/api/admin/bundle/inspect")
+async def admin_bundle_inspect(file: UploadFile = File(...)):
+    """Validate an uploaded bundle and report what it WOULD install, so
+    promoting a model is a decision rather than a side effect of picking a
+    file."""
+    with _spooled(file) as tmp:
+        try:
+            return {"ok": True, "manifest": bundle.inspect(tmp)}
+        except (ValueError, zipfile.BadZipFile) as e:
+            raise HTTPException(400, str(e))
+
+
+@app.post("/api/admin/bundle/apply")
+async def admin_bundle_apply(file: UploadFile = File(...)):
+    """Install a bundle and reload the served state. The locally-owned
+    override/registry CSVs are untouched by construction (app/bundle.py)."""
+    with _spooled(file) as tmp:
+        try:
+            result = bundle.apply(tmp)
+        except (ValueError, zipfile.BadZipFile) as e:
+            raise HTTPException(400, str(e))
     _clear_rec_cache()
-    sys.path.insert(0, str(BACKEND_DIR))
-    from train_real import train_and_save
-    payload = train_and_save(verbose=False)
-    # Rebuild the served book from the sf_deals master list (EVERY current-cycle
-    # renewal, decided + open) so the outlook shows true monthly totals (e.g. July's
-    # 33). NOT train_real.score_active(), which only rescores the thinner
-    # real_active_book.csv and would drop the decided renewals from the outlook.
-    import build_book
-    build_book.build()
     STATE["real"] = real_mode.build_state()
     _warm_recs()
-    return {"status": "retrained", "version": payload["version"],
-            "metrics": payload["metrics"]}
+    return {"status": "applied", **result,
+            "model_version": _cur()["model_version"]}
+
+
+@app.post("/api/admin/reload")
+def admin_reload():
+    """Rebuild served state from what is on disk, installing nothing -- for
+    when the data changed underneath the process."""
+    _clear_rec_cache()
+    STATE["real"] = real_mode.build_state()
+    _warm_recs()
+    return {"status": "reloaded", "model_version": _cur()["model_version"]}
 
 
 # Serve the built frontend when present (single-process deployment)

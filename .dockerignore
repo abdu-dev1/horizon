@@ -29,6 +29,7 @@ NewBusiness/*.xlsx
 *.parquet
 
 # --- build output + local caches (the image builds its own) ---
+dist_bundles/
 frontend/dist/
 frontend/node_modules/
 **/node_modules/

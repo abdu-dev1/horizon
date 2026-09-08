@@ -1,5 +1,18 @@
 const BASE = import.meta.env.VITE_API_BASE ?? "";
 
+// Bundles carry the model (tens of MB), so this streams a multipart body
+// rather than base64-ing anything. The server's error detail is surfaced
+// verbatim: bundle validation failures are actionable messages ("missing
+// required member", "contains locally-owned file"), not status codes.
+async function postFile(path, file) {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch(`${BASE}${path}`, { method: "POST", body });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.detail ?? `${path} -> ${res.status}`);
+  return json;
+}
+
 async function get(path) {
   const res = await fetch(`${BASE}${path}`);
   if (!res.ok) throw new Error(`${path} -> ${res.status}`);
@@ -25,9 +38,17 @@ export const api = {
   renewalDatabase: () => get("/api/renewal-database"),
   recommendations: () => get("/api/recommendations"),
   recommendation: (id) => get(`/api/recommendations/${id}`),
-  retrain: async () => {
-    const res = await fetch(`${BASE}/api/retrain`, { method: "POST" });
-    if (!res.ok) throw new Error(`retrain -> ${res.status}`);
+  // Model publishing replaced in-app retraining. Training runs on an admin's
+  // laptop (the ETL needs human judgment -- see DEPLOYMENT_PLAN.md), publish.py
+  // packages the result, and these install it. There is no `retrain` here any
+  // more: it ran the whole pipeline inside one HTTP request, which takes
+  // minutes against a 230-second platform request timeout.
+  adminStatus: () => get("/api/admin/status"),
+  bundleInspect: (file) => postFile("/api/admin/bundle/inspect", file),
+  bundleApply: (file) => postFile("/api/admin/bundle/apply", file),
+  adminReload: async () => {
+    const res = await fetch(`${BASE}/api/admin/reload`, { method: "POST" });
+    if (!res.ok) throw new Error(`reload -> ${res.status}`);
     return res.json();
   },
   moveDecidedToDatabase: async () => {

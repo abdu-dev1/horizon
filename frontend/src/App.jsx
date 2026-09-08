@@ -29,6 +29,7 @@ import RenewalDatabase from "./pages/RenewalDatabase.jsx";
 import ModelLab from "./pages/ModelLab.jsx";
 import DataQuality from "./pages/DataQuality.jsx";
 import ModelMaintenance from "./pages/ModelMaintenance.jsx";
+import PublishPanel from "./components/PublishPanel.jsx";
 import NbOverview from "./pages/nb/NbOverview.jsx";
 import NbPipeline from "./pages/nb/NbPipeline.jsx";
 import NbDatabase from "./pages/nb/NbDatabase.jsx";
@@ -95,7 +96,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [nbData, setNbData] = useState(null);
   const [nbError, setNbError] = useState(null);
-  const [retraining, setRetraining] = useState(false);
+
   const [toast, setToast] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem("horizon-theme") ?? "dark");
   const [sidebarOpen, setSidebarOpen] = useState(
@@ -146,26 +147,14 @@ export default function App() {
 
   const refreshNb = async () => setNbData(await loadAllNb(isAdmin));
 
-  const handleRetrain = async () => {
-    setRetraining(true);
-    try {
-      if (product === "renewals") {
-        const result = await api.retrain();
-        const fresh = await loadAll(isAdmin);
-        setData(fresh);
-        setToast(`Model ${result.version} trained — holdout AUC ${result.metrics.auc.toFixed(3)}`);
-      } else {
-        const result = await apiNb.retrain();
-        await refreshNb();
-        setToast(`Model ${result.version} trained — ROC AUC ${result.metrics.roc_auc.toFixed(3)}`);
-      }
-      setTimeout(() => setToast(null), 6000);
-    } catch (e) {
-      setToast(`Retrain failed: ${e.message}`);
-      setTimeout(() => setToast(null), 6000);
-    } finally {
-      setRetraining(false);
-    }
+  // Called after a published bundle is installed, from either product's admin
+  // page: the served state has already been rebuilt server-side, so this just
+  // re-reads it.
+  const handlePublished = async (result) => {
+    if (product === "renewals") setData(await loadAll(isAdmin));
+    else await refreshNb();
+    setToast(`Published model ${result.version ?? ""}`.trim());
+    setTimeout(() => setToast(null), 6000);
   };
 
   const switchProduct = (p) => {
@@ -301,13 +290,17 @@ export default function App() {
             >
               {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
             </button>
-            {(product === "renewals" || nbData) && (
-              <button className="btn btn-primary" onClick={handleRetrain} disabled={retraining}>
-                <RefreshCw
-                  size={14}
-                  style={retraining ? { animation: "spin 0.9s linear infinite" } : {}}
-                />
-                {retraining ? "Retraining…" : "Monthly Retrain"}
+            {/* The "Monthly Retrain" button that used to live here is gone. It
+                POSTed /api/retrain, which ran the whole ETL + train + build
+                pipeline inside one request — minutes of work against a
+                230-second platform request timeout, using raw client workbooks
+                the server does not have. Publishing a model reviewed on a
+                laptop replaced it, and it lives on the admin-only Model
+                Maintenance page rather than in the global header: it is a
+                monthly operation, not a primary action. */}
+            {isAdmin && pageId !== "maintenance" && product === "renewals" && (
+              <button className="btn" onClick={() => setPage("maintenance")}>
+                <Wrench size={14} /> Model Maintenance
               </button>
             )}
           </div>
@@ -326,7 +319,10 @@ export default function App() {
           {product === "renewals" && pageId === "model" && <ModelLab data={data} />}
           {product === "renewals" && pageId === "quality" && <DataQuality />}
           {product === "renewals" && pageId === "maintenance" && (
-            <ModelMaintenance onDataChange={async () => setData(await loadAll(isAdmin))} />
+            <div style={{ display: "grid", gap: 18 }}>
+              <PublishPanel client={api} product="renewals" onApplied={handlePublished} />
+              <ModelMaintenance onDataChange={async () => setData(await loadAll(isAdmin))} />
+            </div>
           )}
 
           {product === "newbusiness" && nbError && (
@@ -356,7 +352,10 @@ export default function App() {
           {product === "newbusiness" && nbData && pageId === "performance" && <NbPerformance data={nbData} />}
           {product === "newbusiness" && nbData && pageId === "database" && <NbDatabase />}
           {product === "newbusiness" && nbData && pageId === "model" && (
-            <NbModel data={nbData} onDataChange={refreshNb} />
+            <div style={{ display: "grid", gap: 18 }}>
+              <PublishPanel client={apiNb} product="newbusiness" onApplied={handlePublished} />
+              <NbModel data={nbData} onDataChange={refreshNb} />
+            </div>
           )}
           {product === "newbusiness" && nbData && pageId === "quality" && <NbDataQuality />}
           {product === "newbusiness" && nbData && pageId === "pricinglogic" && <NbPricingLogic />}

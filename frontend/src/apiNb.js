@@ -7,6 +7,17 @@
 // isolation could accidentally get blurred, so it stays its own module.
 const BASE = "/nb-app";
 
+// Streams a bundle upload; surfaces the server's validation detail verbatim
+// (see the twin in api.js).
+async function postFile(path, file) {
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch(`${BASE}${path}`, { method: "POST", body });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(json?.detail ?? `${path} -> ${res.status}`);
+  return json;
+}
+
 async function get(path) {
   const res = await fetch(`${BASE}${path}`);
   if (!res.ok) throw new Error(`${path} -> ${res.status}`);
@@ -33,9 +44,14 @@ export const apiNb = {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `update stage -> ${res.status}`);
     return res.json();
   },
-  retrain: async () => {
-    const res = await fetch(`${BASE}/api/retrain`, { method: "POST" });
-    if (!res.ok) throw new Error(`retrain -> ${res.status}`);
+  // See the matching note in api.js: in-app retraining is gone, replaced by
+  // installing a bundle built and reviewed on an admin's laptop.
+  adminStatus: () => get("/api/admin/status"),
+  bundleInspect: (file) => postFile("/api/admin/bundle/inspect", file),
+  bundleApply: (file) => postFile("/api/admin/bundle/apply", file),
+  adminReload: async () => {
+    const res = await fetch(`${BASE}/api/admin/reload`, { method: "POST" });
+    if (!res.ok) throw new Error(`reload -> ${res.status}`);
     return res.json();
   },
 };
