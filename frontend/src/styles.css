@@ -1,0 +1,1544 @@
+:root {
+  --bg: #070b14;
+  --bg-soft: #0b1120;
+  --panel: #0e1626;
+  --panel-2: #111c30;
+  --border: #1c2940;
+  --border-soft: #16223a;
+  --text: #e6edf7;
+  --text-dim: #8a9bb8;
+  --text-faint: #5b6c8c;
+  --accent: #38bdf8;
+  --accent-2: #818cf8;
+  --green: #34d399;
+  --amber: #fbbf24;
+  --red: #f87171;
+  /* Tier ramp text ink — dark mode uses the bright hues (legible on dark surface) */
+  --tier-secure-ink: #2dd4bf;
+  --tier-stable-ink: #a3e635;
+  --tier-watch-ink: #f59e0b;
+  --tier-concern-ink: #fb923c; /* lighter orange tint of the Concern dot, legible on dark */
+  --tier-critical-ink: #fb7185;
+  --topbar-bg: rgba(7, 11, 20, 0.8);
+  --chart-grid: #16223a;
+  --chart-axis: #5b6c8c;
+  --brand-fg: #06121f;
+  /* liquid glass */
+  --glass-bg: rgba(18, 29, 49, 0.55);
+  --glass-strong: rgba(11, 18, 33, 0.62);
+  --glass-border: rgba(255, 255, 255, 0.09);
+  --glass-highlight: rgba(255, 255, 255, 0.06);
+  --glass-shadow: 0 10px 34px rgba(0, 0, 0, 0.28);
+  --radius: 14px;
+  --font: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+}
+
+[data-theme="light"] {
+  --bg: #f3f5fa;
+  --bg-soft: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #fcfdff;
+  --border: #dbe2ef;
+  --border-soft: #e8edf6;
+  --text: #15233d;
+  --text-dim: #4d6184;
+  --text-faint: #8392b3;
+  --accent: #0284c7;
+  --accent-2: #6366f1;
+  --green: #059669;
+  --amber: #d97706;
+  --red: #dc2626;
+  /* Tier ramp text ink — light mode uses deeper shades so 11px labels stay legible */
+  --tier-secure-ink: #0f9488;
+  --tier-stable-ink: #4d7c0f;
+  --tier-watch-ink: #b45309;
+  --tier-concern-ink: #c2410c; /* darker orange tint of the Concern dot, legible on light */
+  --tier-critical-ink: #be123c;
+  --topbar-bg: rgba(255, 255, 255, 0.85);
+  --chart-grid: #e4e9f3;
+  --chart-axis: #8392b3;
+  --brand-fg: #ffffff;
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-strong: rgba(255, 255, 255, 0.68);
+  --glass-border: rgba(255, 255, 255, 0.7);
+  --glass-highlight: rgba(255, 255, 255, 0.5);
+  --glass-shadow: 0 10px 30px rgba(21, 35, 61, 0.1);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root { height: 100%; }
+
+body {
+  font-family: var(--font);
+  background:
+    radial-gradient(900px 620px at 10% -8%, rgba(56, 189, 248, 0.12), transparent 60%),
+    radial-gradient(820px 600px at 102% -2%, rgba(129, 140, 248, 0.12), transparent 55%),
+    radial-gradient(760px 720px at 50% 115%, rgba(56, 189, 248, 0.07), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+[data-theme="light"] body {
+  background:
+    radial-gradient(900px 620px at 10% -8%, rgba(56, 189, 248, 0.16), transparent 60%),
+    radial-gradient(820px 600px at 102% -2%, rgba(129, 140, 248, 0.14), transparent 55%),
+    radial-gradient(760px 720px at 50% 115%, rgba(99, 102, 241, 0.08), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+/* ---------- layout ---------- */
+.shell { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: 232px;
+  flex-shrink: 0;
+  background: var(--glass-strong);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  border-right: 1px solid var(--glass-border);
+  padding: 22px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 2px 10px 20px;
+}
+
+.brand-mark {
+  width: 48px; height: 48px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+.brand-mark img { width: 100%; height: 100%; object-fit: contain; }
+
+.brand-name { font-weight: 800; font-size: 14.5px; letter-spacing: -0.01em; }
+.brand-sub { font-size: 11.5px; color: var(--text-faint); font-weight: 600; letter-spacing: 0.01em; white-space: nowrap; }
+
+/* Top-level product switch (Renewals <-> New Business) — one seamless app,
+   two isolated backends underneath. Renewals keeps --accent (sky); New
+   Business gets --accent-2 (indigo) so which mode you're in is legible at a
+   glance without reading text, using colors already in the existing palette
+   (no new hues introduced). */
+.product-switch {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  margin: 0 10px 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+}
+
+.product-switch-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 6px;
+  border-radius: 9px;
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  font-weight: 700;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.product-switch-btn:hover { color: var(--text-dim); }
+
+.product-switch-btn.active[data-product="renewals"] {
+  color: var(--accent);
+  background: rgba(56, 189, 248, 0.12);
+}
+
+.product-switch-btn.active[data-product="newbusiness"] {
+  color: var(--accent-2);
+  background: rgba(129, 140, 248, 0.14);
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+  transition: all 0.15s ease;
+}
+
+.nav-item:hover { color: var(--text); background: var(--panel); }
+
+.nav-item.active {
+  color: var(--accent);
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.18);
+}
+
+/* New Business mode: page nav active state echoes the indigo product-switch
+   accent instead of the renewal sky accent (see .sidebar[data-product]). */
+.sidebar[data-product="newbusiness"] .nav-item.active {
+  color: var(--accent-2);
+  background: rgba(129, 140, 248, 0.1);
+  border-color: rgba(129, 140, 248, 0.2);
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 12px;
+  border-top: 1px solid var(--border-soft);
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.7;
+}
+
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--green);
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  padding: 3px 8px;
+  border-radius: 99px;
+  margin-bottom: 6px;
+}
+
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--glass-border);
+  background: var(--glass-strong);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.page-title { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; }
+.page-sub { color: var(--text-dim); font-size: 12.5px; margin-top: 3px; }
+
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+
+.asof-chip {
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 7px 14px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: var(--brand-fg);
+}
+
+.btn-ghost {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 8px 11px;
+}
+
+.btn-ghost:hover { color: var(--accent); border-color: var(--accent); }
+
+.btn-primary:hover { filter: brightness(1.12); }
+.btn-primary:disabled { opacity: 0.55; cursor: wait; }
+
+.content { padding: 26px 28px 48px; display: flex; flex-direction: column; gap: 22px; }
+
+/* ---------- cards ---------- */
+.grid { display: grid; gap: 16px; }
+.grid-kpi { grid-template-columns: repeat(auto-fit, minmax(195px, 1fr)); }
+.grid-2 { grid-template-columns: 1fr 1fr; }
+.grid-3-2 { grid-template-columns: 3fr 2fr; }
+.grid-2-3 { grid-template-columns: 2fr 3fr; }
+
+@media (max-width: 1100px) {
+  .grid-2, .grid-3-2, .grid-2-3 { grid-template-columns: 1fr; }
+}
+
+.card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--glass-shadow);
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  margin-bottom: 2px;
+}
+
+.card-sub { font-size: 11.5px; color: var(--text-faint); margin-bottom: 16px; }
+
+.kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.kpi-value {
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-top: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-foot { font-size: 11.5px; color: var(--text-dim); margin-top: 5px; }
+.kpi-accent { color: var(--accent); }
+.kpi-green { color: var(--green); }
+.kpi-amber { color: var(--amber); }
+.kpi-red { color: var(--red); }
+
+/* ---------- badges & bars ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 99px; background: var(--badge-dot, currentColor); }
+/* Tier badges mirror the JS TIER_COLORS ramp so the badge matches the likelihood
+   bar (teal -> lime -> amber -> orange -> rose). Dot = the bright tier hue (same as
+   the bar); text = mode-adaptive ink (bright in dark, deeper in light) so the 11px
+   label stays legible on either surface. --tier-*-ink defined in :root (dark) +
+   [data-theme=light].
+   "Concern" (added 2026-08-04) splits the old Watch band so the ~50-68% probability
+   range - where the model's output concentrates most heavily - gets two colors
+   instead of one. Deliberately kept in the SAME warm hue family as Watch (amber ->
+   orange), not a disconnected hue, so it visually reads as "same uncertain zone,
+   more intense" rather than an unrelated category - Watch/Concern/Critical form a
+   monotonically darkening amber->orange->rose progression. Tradeoff: because amber
+   and rose are already near the edge of comfortable separation, a true orange
+   sitting between them can't hit the same normal-vision separation as the other
+   tiers (~11 vs the usual >=15) - same class of tradeoff already accepted for the
+   amber/lime CVD pair below. Never rely on the dot alone: RiskBadge always renders
+   the text label too. */
+.badge-Secure   { color: var(--tier-secure-ink);   background: rgba(45, 212, 191, 0.14); --badge-dot: #2dd4bf; }
+.badge-Stable   { color: var(--tier-stable-ink);   background: rgba(163, 230, 53, 0.18); --badge-dot: #a3e635; }
+.badge-Watch    { color: var(--tier-watch-ink);    background: rgba(245, 158, 11, 0.15); --badge-dot: #f59e0b; }
+.badge-Concern  { color: var(--tier-concern-ink);  background: rgba(234, 88, 12, 0.15);  --badge-dot: #ea580c; }
+.badge-Critical { color: var(--tier-critical-ink); background: rgba(225, 29, 72, 0.12); --badge-dot: #e11d48; }
+
+/* New Business win-likelihood bands — same 4 steps as NB_BAND_COLORS
+   (format.js): High/Moderate/Very Low alias the renewal Secure/Stable/Critical
+   ink + dot exactly (same hue, same meaning: best -> worst), and "Low" aliases
+   Watch. "Very Low" has its space stripped for the class name (see
+   LikelihoodBadge in components/shared.jsx). */
+.badge-High     { color: var(--tier-secure-ink);   background: rgba(45, 212, 191, 0.14); --badge-dot: #2dd4bf; }
+.badge-Moderate { color: var(--tier-stable-ink);   background: rgba(163, 230, 53, 0.18); --badge-dot: #a3e635; }
+.badge-Low      { color: var(--tier-watch-ink);    background: rgba(245, 158, 11, 0.15); --badge-dot: #f59e0b; }
+.badge-VeryLow  { color: var(--tier-critical-ink); background: rgba(225, 29, 72, 0.12);  --badge-dot: #e11d48; }
+.badge-Renewed { color: var(--green); background: rgba(52, 211, 153, 0.1); }
+.badge-Termed { color: var(--red); background: rgba(248, 113, 113, 0.12); }
+
+.prob-cell { display: flex; align-items: center; gap: 10px; min-width: 130px; }
+.prob-num { font-family: var(--mono); font-size: 12px; font-weight: 600; width: 44px; }
+.prob-track { flex: 1; height: 5px; border-radius: 99px; background: var(--border-soft); overflow: hidden; }
+.prob-fill { height: 100%; border-radius: 99px; transition: width 0.4s ease; }
+/* "High confidence" tag — only on the extremes (>=80% renew / <=30% term), the model's
+   most reliable calls. Neutral color on purpose: it marks certainty, not a good outcome
+   (a confident term is still certain). */
+.conf-tag {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 99px;
+  color: var(--ink-soft, #8a9bb8);
+  background: var(--border-soft);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  cursor: default;
+}
+
+/* ---------- table ---------- */
+.table-tools { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  flex: 1;
+  min-width: 220px;
+  color: var(--text-faint);
+}
+
+.search-box input {
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  width: 100%;
+}
+
+select.filter {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;            /* push to the right edge of the toolbar */
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 8px 14px;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: filter 0.15s, transform 0.1s;
+}
+.export-btn:hover { filter: brightness(1.08); }
+.export-btn:active { transform: translateY(1px); }
+.export-btn:disabled { opacity: 0.55; cursor: default; filter: none; transform: none; }
+.export-btn + .export-btn { margin-left: 8px; }
+
+.table-wrap { overflow-x: auto; }
+
+table { width: 100%; border-collapse: collapse; }
+
+th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+th:hover { color: var(--text-dim); }
+
+td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+tbody tr { cursor: pointer; transition: background 0.12s ease; }
+tbody tr:hover { background: rgba(56, 189, 248, 0.04); }
+
+.cell-main { font-weight: 600; }
+
+/* "needs data" — pipeline-list groups awaiting underwriting */
+.est-tag {
+  margin-left: 8px;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--amber);
+  background: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 99px;
+  padding: 1px 7px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.chip-est {
+  color: var(--amber);
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+.lr-status {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--stable);
+}
+
+.data-note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  padding: 12px 15px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  background: rgba(251, 191, 36, 0.06);
+  border: 1px solid rgba(251, 191, 36, 0.22);
+}
+.data-note > svg { color: var(--amber); flex-shrink: 0; margin-top: 1px; }
+.data-note .est-tag { margin-left: 0; }
+.data-note-how {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(251, 191, 36, 0.18);
+  color: var(--text-faint);
+}
+
+.est-banner {
+  margin: 14px 0 4px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  background: rgba(251, 191, 36, 0.07);
+  border: 1px solid rgba(251, 191, 36, 0.22);
+}
+.est-banner-how {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(251, 191, 36, 0.18);
+  color: var(--text-faint);
+}
+
+/* Informational note (not a warning) -- e.g. explaining why a New Business
+   quote headlines a tier's historical rate instead of its own raw score. */
+.drawer-note {
+  margin: 14px 0 4px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  background: rgba(56, 189, 248, 0.07);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+.driver-empty {
+  padding: 10px 13px;
+  border-radius: 9px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-faint);
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px dashed rgba(148, 163, 184, 0.25);
+}
+.cell-dim { color: var(--text-dim); font-size: 11.5px; }
+.mono { font-family: var(--mono); font-size: 12px; }
+
+.stage-editable {
+  cursor: pointer;
+  border-radius: 5px;
+  padding: 2px 6px;
+  margin: -2px -6px;
+}
+.stage-editable:hover { background: rgba(148, 163, 184, 0.12); }
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.pager-btns { display: flex; gap: 6px; }
+
+.pager button {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pager button:disabled { opacity: 0.4; cursor: default; }
+.pager button:not(:disabled):hover { color: var(--text); border-color: var(--accent); }
+
+/* ---------- drawer ---------- */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(4, 7, 13, 0.6);
+  backdrop-filter: blur(2px);
+  z-index: 40;
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(500px, 96vw);
+  background: var(--glass-strong);
+  backdrop-filter: blur(26px) saturate(160%);
+  -webkit-backdrop-filter: blur(26px) saturate(160%);
+  border-left: 1px solid var(--glass-border);
+  z-index: 50;
+  padding: 26px;
+  overflow-y: auto;
+  animation: slide-in 0.22s ease;
+}
+
+@keyframes slide-in {
+  from { transform: translateX(40px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.drawer-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 8px;
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+
+.drawer h2 { font-size: 20px; letter-spacing: -0.02em; margin-bottom: 10px; padding-right: 36px; line-height: 1.2; }
+
+.move-to-db-error { margin-top: 6px; font-size: 11.5px; color: var(--red); }
+
+.drawer-accent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  border-radius: 0 0 4px 4px;
+}
+
+/* ---------- outcome-tinted liquid-glass drawer ---------- */
+.drawer[data-outcome] { isolation: isolate; }
+.drawer[data-outcome="renewed"] { --outcome: var(--green); }
+.drawer[data-outcome="termed"]  { --outcome: var(--red); }
+
+/* the slow color that fades down from the top */
+.drawer-wash {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 420px;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(150% 100% at 50% -28%,
+      color-mix(in srgb, var(--outcome) 42%, transparent) 0%,
+      color-mix(in srgb, var(--outcome) 18%, transparent) 30%,
+      color-mix(in srgb, var(--outcome) 6%, transparent) 55%,
+      transparent 80%);
+  opacity: 0;
+  transform: translateY(-16px);
+  animation: outcome-wash 1.05s cubic-bezier(0.2, 0.7, 0.2, 1) 0.05s forwards;
+}
+@keyframes outcome-wash {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* bright, glowing top edge in the outcome colour */
+.drawer[data-outcome] .drawer-accent {
+  z-index: 2;
+  height: 3px;
+  border-radius: 0;
+  background: linear-gradient(90deg, transparent, var(--outcome) 20%, var(--outcome) 80%, transparent);
+  box-shadow: 0 0 24px 3px color-mix(in srgb, var(--outcome) 60%, transparent);
+}
+
+/* keep all content crisp above the wash. The wash and the absolutely-positioned
+   accent + close button are excluded so their own positioning is preserved. */
+.drawer[data-outcome] > *:not(.drawer-wash):not(.drawer-close):not(.drawer-accent) {
+  position: relative;
+  z-index: 1;
+}
+/* the close button stays absolute (top-right) — only lift it above the wash */
+.drawer[data-outcome] .drawer-close { z-index: 3; }
+
+/* frosted-glass fact cards so the colour glows through near the top */
+.drawer[data-outcome] .fact {
+  background: var(--glass-bg);
+  border-color: var(--glass-border);
+  backdrop-filter: blur(7px) saturate(140%);
+  -webkit-backdrop-filter: blur(7px) saturate(140%);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+
+/* the outcome chip, tinted to match */
+.drawer[data-outcome] .chip-outcome {
+  font-weight: 700;
+  color: var(--outcome);
+  background: color-mix(in srgb, var(--outcome) 15%, transparent);
+  border-color: color-mix(in srgb, var(--outcome) 38%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-wash { animation: none; opacity: 1; transform: none; }
+}
+
+.drawer-head { margin-bottom: 4px; }
+
+.drawer-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.drawer-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font);
+  color: var(--red);
+  background: rgba(248, 113, 113, 0.08);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: 7px;
+  cursor: pointer;
+}
+.drawer-delete:hover { background: rgba(248, 113, 113, 0.16); }
+.drawer-delete:disabled { opacity: 0.5; cursor: default; }
+.drawer-delete-error { margin-top: 6px; font-size: 11px; color: var(--red); }
+
+.chip {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  padding: 3px 10px;
+}
+
+.drawer-hero {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin: 20px 0 6px;
+  padding: 18px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--border);
+}
+
+.gauge { position: relative; width: 130px; height: 130px; flex-shrink: 0; }
+.gauge svg { width: 130px; height: 130px; }
+.gauge-track { stroke: var(--border-soft); }
+
+.gauge-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.gauge-pct {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.gauge-cap {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.hero-side {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+
+.hero-stat { display: flex; flex-direction: column; gap: 1px; }
+.hero-stat-label { font-size: 10.5px; color: var(--text-faint); font-weight: 600; }
+.hero-stat-val { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.drawer-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+  margin: 20px 0 10px;
+}
+
+.fact-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+.fact {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.fact .k { font-size: 10.5px; color: var(--text-faint); font-weight: 600; }
+.fact .v { font-size: 13px; font-weight: 700; margin-top: 3px; }
+.fact .v-blank { color: var(--text-faint); font-weight: 600; font-style: italic; opacity: 0.75; }
+
+.fact-sub {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+  margin: 16px 0 8px;
+}
+.fact-sub-note { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--text-faint); }
+
+.driver {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 13px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  border-left-width: 3px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.driver-negative { border-left-color: var(--red); }
+.driver-positive { border-left-color: var(--green); }
+.driver-text { flex: 1; }
+.driver-arrow { font-size: 11px; flex-shrink: 0; }
+
+.driver-dot { width: 8px; height: 8px; border-radius: 99px; flex-shrink: 0; }
+
+/* ---------- misc ---------- */
+.loading-screen {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  color: var(--text-dim);
+}
+
+.spinner {
+  width: 38px; height: 38px;
+  border-radius: 99px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.chart-tooltip {
+  background: var(--bg-soft) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  font-size: 12px !important;
+}
+
+.legend-row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
+.legend-item { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-dim); font-weight: 600; }
+.legend-swatch { width: 10px; height: 10px; border-radius: 3px; }
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--panel-2);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 14px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 100;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: slide-in 0.25s ease;
+}
+
+.metric-pill-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* ---------- segmented toggle (e.g. Forecast page's Projected only / Combined) ---------- */
+.seg-toggle {
+  display: inline-flex;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.seg-toggle button {
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 5px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.seg-toggle button.on {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: var(--brand-fg);
+}
+
+.seg-toggle.busy { opacity: 0.6; pointer-events: none; }
+
+/* ---------- recommendation ---------- */
+.rec-card {
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  font-size: 12.5px;
+}
+
+.rec-best {
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.28);
+}
+
+.rec-muted {
+  background: var(--panel);
+  border: 1px solid var(--border-soft);
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.rec-headline { font-weight: 700; font-size: 13.5px; margin-bottom: 8px; }
+
+.rec-impact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rec-move { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.rec-saved { font-size: 12px; font-weight: 700; color: var(--green); }
+
+.rec-alts {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.rec-alt {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.rec-alt span { font-family: var(--mono); color: var(--green); font-weight: 600; }
+
+/* ---------- theme-aware recharts overrides ----------
+   Chart colors are passed as SVG attributes from JS (dark palette);
+   these CSS rules re-skin them per theme without touching the pages. */
+.recharts-cartesian-grid line { stroke: var(--chart-grid) !important; }
+.recharts-cartesian-axis-tick text { fill: var(--chart-axis) !important; }
+.recharts-default-tooltip {
+  background-color: var(--bg-soft) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+}
+.recharts-tooltip-label { color: var(--text) !important; }
+/* Recharts' default Pie tooltip payload has no item color, so it falls back to
+   black text — invisible on a dark tooltip background. Force it to the theme
+   text color for every chart's item row (name/value/unit), not just the label. */
+.recharts-tooltip-item,
+.recharts-tooltip-item-name,
+.recharts-tooltip-item-value,
+.recharts-tooltip-item-separator,
+.recharts-tooltip-item-unit { color: var(--text) !important; }
+
+[data-theme="light"] .card { box-shadow: 0 1px 3px rgba(21, 35, 61, 0.05); }
+[data-theme="light"] .drawer { box-shadow: -16px 0 48px rgba(21, 35, 61, 0.12); }
+[data-theme="light"] .drawer-overlay { background: rgba(21, 35, 61, 0.25); }
+[data-theme="light"] .toast { box-shadow: 0 12px 40px rgba(21, 35, 61, 0.18); }
+
+.qcard {
+  border-radius: 12px;
+  padding: 18px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  flex: 1;
+  min-width: 250px;
+}
+
+.qcard .q-name { font-size: 12px; font-weight: 800; color: var(--accent); letter-spacing: 0.04em; }
+.qcard .q-big { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; margin: 8px 0 2px; }
+.qcard .q-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim); padding: 4px 0; border-bottom: 1px dashed var(--border-soft); }
+.qcard .q-row:last-child { border-bottom: none; }
+.qcard .q-row b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ---------- liquid-glass inner panels (neutral surfaces only) ---------- */
+.asof-chip,
+.seg-toggle,
+.btn-ghost,
+.fact,
+.qcard,
+.drawer-hero,
+.rec-muted,
+.drawer-close,
+.search-box,
+select.filter,
+.pager button {
+  background: var(--glass-bg) !important;
+  border-color: var(--glass-border) !important;
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  backdrop-filter: blur(8px) saturate(140%);
+}
+
+.qcard, .drawer-hero { box-shadow: inset 0 1px 0 var(--glass-highlight); }
+
+/* ---------- data guide ---------- */
+.guide-hero { display: flex; align-items: center; gap: 16px; }
+
+.guide-hero-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--brand-fg);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+}
+
+.guide-list { list-style: none; display: flex; flex-direction: column; gap: 11px; }
+.guide-list li {
+  font-size: 12.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  padding-left: 16px;
+  position: relative;
+}
+.guide-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--accent);
+}
+.guide-list b { color: var(--text); }
+
+.guide-rule { border-color: rgba(251, 191, 36, 0.3); }
+.guide-rule-text { font-size: 12.5px; color: var(--text-dim); line-height: 1.6; margin-bottom: 10px; }
+.guide-rule-text b { color: var(--text); }
+
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 14px; }
+.step { display: flex; gap: 12px; align-items: flex-start; }
+.step-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 99px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--accent);
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+}
+.step-title { font-weight: 700; font-size: 13px; margin-bottom: 3px; }
+.step-body { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+.step-body b { color: var(--text); }
+
+/* Data Quality page */
+.dq-group { margin-top: 14px; }
+.dq-group:first-of-type { margin-top: 4px; }
+.dq-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+.dq-bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 7px; }
+.dq-bar-label {
+  width: 230px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.dq-bar-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dq-est {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--amber);
+  background: rgba(251, 191, 36, 0.12);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+.dq-bar-pct { width: 42px; text-align: right; flex-shrink: 0; color: var(--text-dim); }
+.dq-footnote { margin-top: 14px; font-size: 11px; color: var(--text-faint); }
+
+/* Model Maintenance — warning banner */
+.mm-warning {
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.07);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+
+/* "View all fields" button */
+.mm-fieldbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 8px 13px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font);
+  color: var(--accent);
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.mm-fieldbtn:hover { background: rgba(56, 189, 248, 0.2); }
+
+/* Fields popup */
+.mm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(2, 6, 16, 0.6);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.mm-modal {
+  position: relative;
+  width: 100%;
+  max-width: 900px;
+  max-height: 86vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--glass-shadow);
+  padding: 22px 24px 26px;
+}
+.mm-modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+.mm-modal-close:hover { color: var(--text); }
+.mm-modal-warn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 0 4px;
+  padding: 9px 12px;
+  font-size: 11.5px;
+  color: var(--amber);
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 9px;
+}
+.mm-cat {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 18px 0 8px;
+}
+
+@media (max-width: 720px) {
+  .dq-bar-label { width: 130px; }
+}
+
+/* Needs Data — full editable grid, every field the model uses */
+.uw-table { border-collapse: separate; border-spacing: 0; }
+.uw-table th, .uw-table td { white-space: nowrap; }
+.uw-col-sticky {
+  position: sticky;
+  left: 0;
+  z-index: 5;
+  background: var(--panel);
+  box-shadow: 1px 0 0 var(--border-soft);
+}
+.uw-cell-input {
+  width: 74px;
+  padding: 5px 6px;
+  font-size: 11px;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.uw-cell-input:focus { outline: none; border-color: var(--accent); }
+.uw-cell-select { width: 66px; cursor: pointer; }
+.uw-save {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font);
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.uw-save:disabled { opacity: 0.4; cursor: default; }
+.uw-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--green);
+}
+.uw-error { font-size: 10.5px; color: var(--red); cursor: help; }
+.uw-spin { animation: spin 0.9s linear infinite; }
+
+/* Model Maintenance — upload / import panel */
+.upload-panel { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border-soft); }
+.upload-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.upload-prefill-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.upload-pick { margin-top: 0; }
+.upload-filename { font-size: 11.5px; color: var(--text-faint); }
+.upload-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  font-size: 11.5px;
+  border-radius: 9px;
+}
+.upload-busy { color: var(--text-dim); background: var(--border-soft); }
+.upload-error { color: var(--red); background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.3); }
+.upload-success {
+  flex-wrap: wrap;
+  color: var(--green);
+  background: rgba(52, 211, 153, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+.upload-again {
+  margin-left: auto;
+  padding: 4px 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  font-family: var(--font);
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.upload-preview {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--border-soft);
+}
+.upload-preview-bad { border-color: rgba(248, 113, 113, 0.4); }
+.upload-preview-head { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.upload-issue-list { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.upload-issue-list li { display: flex; align-items: flex-start; gap: 6px; font-size: 11px; }
+.upload-issue-errors li { color: var(--red); }
+.upload-issue-warnings li { color: var(--amber); }
+.upload-unrecognized { margin: 6px 0; font-size: 10.5px; color: var(--text-faint); }
+.upload-sample { margin-top: 8px; max-height: 220px; }
+.upload-preview-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.upload-modal { max-width: 620px; }
+
+/* ---------- Sales Performance page (New Business) ---------- */
+/* A card whose title needs a control beside it (year basis, leaderboard
+   dimension). Per the dataviz interaction spec, filters sit in one row above
+   the plot they affect, never floating over it. */
+.card-head-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 4px;
+}
+.card-head-row .card-sub { margin-bottom: 12px; }
+.card-head-row .card-title { margin-bottom: 2px; }
+
+.filter-row { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+.filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.filter-check input { accent-color: var(--accent); cursor: pointer; }
+
+/* Caption under a chart: the honest footnote (partial years, premium coverage,
+   why this is two charts and not one dual-axis chart). Recessive on purpose --
+   it qualifies the chart, it isn't a second headline. */
+.card-note {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-faint);
+}
+
+.muted { color: var(--text-faint); }
+
+/* Recharts tooltip body. The container's own background/border come from
+   tooltipStyle (shared.jsx) so this only handles the inner type scale. */
+/* The actual tooltip box for a custom Recharts `content` component (YearTip/
+   SegTip in NbPerformance.jsx). Recharts' `contentStyle` prop -- which looks
+   like it should style this -- only applies to its OWN default tooltip
+   content; it is silently ignored the moment you supply a custom `content`
+   render prop, so a custom tooltip with no styling of its own renders as bare
+   floating text with no background/border/padding at all (caught 2026-08-27:
+   exactly this, overlapping the bar underneath it and unreadable). Styled
+   here via CSS vars so it auto-switches with the theme, unlike components/
+   shared.jsx's ChartTooltip (used on the renewal Forecast page), which
+   branches light/dark manually in JS -- this is the simpler of the two
+   approaches and the one to copy for any future custom Recharts tooltip. */
+.chart-tip {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.6;
+  min-width: 168px;
+}
+.chart-tip-head { font-weight: 700; margin-bottom: 3px; color: var(--text); }
+.chart-tip-dim { color: var(--text-faint); font-size: 11px; }
+
+/* Win rate as a multiple of the book average. The bar is the comparison; the
+   numeric rate in the adjacent column is always present, so the up/down color
+   is never the only signal (dataviz: no color-alone encoding). */
+.ratebar { display: flex; align-items: center; gap: 8px; min-width: 116px; }
+.ratebar-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+.ratebar-fill { height: 100%; border-radius: 99px; }
+.ratebar-num { font-family: var(--mono); font-size: 11.5px; font-weight: 700; min-width: 40px; }
+
+/* Small multiple in a table cell: one row's win rate by year. No axes and no
+   legend by design -- the shape is the message and the table carries the
+   numbers; the <title> child gives the full year-by-year readout on hover and
+   to screen readers. */
+.spark { display: block; overflow: visible; }
+
+/* Data Quality: marks a field the model actually trains on, so a
+   "67% on history / 0% on the open pipeline" row reads as a broken feature
+   rather than a neutral data gap. Paired with a title tooltip -- the dot is
+   an addition to the label, never the only carrier of the fact. */
+.dq-feature-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--accent);
+  margin-left: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* Styled hover tooltip (components/shared.jsx's HoverTip) -- replaces a
+   native title= attribute wherever the content is more than a few words or
+   needs line breaks, since the OS tooltip renders both badly. Pure CSS
+   show/hide (opacity + visibility on :hover/:focus-visible) so it adds no
+   per-row JS state -- matters on Sales Performance's Leaderboard, which can
+   render dozens of these per page. Theme-adaptive (var(--panel)/--border/
+   --text), unlike the Recharts tooltipStyle object which is hardcoded dark. */
+.hovertip {
+  position: relative;
+  display: inline-flex;
+  outline: none;
+}
+.hovertip-bubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%) translateY(4px);
+  min-width: max-content;
+  max-width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  color: var(--text);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.5;
+  white-space: pre-line;
+  text-align: left;
+  z-index: 40;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  pointer-events: none;
+}
+.hovertip:hover .hovertip-bubble,
+.hovertip:focus-visible .hovertip-bubble {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+/* Small triangle pointing down at the hovered element, same surface/border
+   as the bubble so it reads as one continuous shape. */
+.hovertip-bubble::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: var(--panel);
+}

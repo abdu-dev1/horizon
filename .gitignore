@@ -1,0 +1,97 @@
+# =====================================================================
+# ALLOWLIST .gitignore -- denies everything by default.
+#
+# This working tree holds ~100 real client workbooks and data CSVs
+# (named groups, premiums, loss ratios, broker/RSD performance) spread
+# across ~30 directories, plus ~1 GB of built exes. A denylist would
+# only have to miss ONE pattern to publish client data to GitHub, so
+# this file ignores everything and re-adds source code explicitly.
+#
+# Consequence to know: a NEW source file in a new location is ignored
+# by default too. If `git status` doesn't show a file you just wrote,
+# add an allow rule below -- don't use `git add -f`, which defeats the
+# point of failing safe.
+# =====================================================================
+
+# 1. Deny everything.
+*
+
+# 2. Allow descent into directories so the allowlist in step 4 can match.
+!*/
+
+# 3. Re-block heavy, data-only, and generated trees. Listing a directory
+#    here stops git descending into it at all -- faster than ignoring its
+#    files individually, and it cannot be re-opened by a later rule.
+All-Data/
+FillData/
+FillData---DONE/
+newData/
+data/
+upload*/
+test/
+dist_combined/
+node_modules/
+**/_seed_stage/
+**/_seed_stage_data/
+**/_state_backup*/
+**/_removed_synthetic*/
+**/backup_*/
+**/data/uploads/
+**/dist/
+**/build/pyi/
+**/build/embed/
+**/__pycache__/
+.venv/
+venv/
+
+# 4. Allow source code back in.
+#    Python (both backends, the gateway, and the root packager)
+!**/*.py
+#    PyInstaller specs -- hand-written build config, not generated output
+!**/build/*.spec
+#    Frontend source + its config (src/ is 100% code, no data assets)
+!frontend/src/**
+!frontend/index.html
+!frontend/vite.config.js
+!frontend/package.json
+!frontend/package-lock.json
+#    Dependency manifests and docs
+!**/requirements.txt
+!**/*.md
+!.gitignore
+!.dockerignore
+
+# 5. Backstop: hard-deny every data/binary format, last word over step 4.
+#    Nothing in the allowlist above legitimately uses these extensions,
+#    so this can only ever catch a mistake.
+*.xlsx
+*.xlsm
+*.xls
+*.xlsb
+*.csv
+*.joblib
+*.pkl
+*.pickle
+*.parquet
+*.db
+*.sqlite*
+*.exe
+*.zip
+*.7z
+*.log
+*.png
+*.jpg
+*.jpeg
+*.ico
+*.pdf
+*.txt.bak
+*.bak
+*.bak_*
+.env
+.env.*
+
+# 6. The only binaries that ARE source: frontend branding assets, needed
+#    by the Vite build and referenced as the exe icon in Horizon.spec.
+!frontend/public/favicon.ico
+!frontend/public/favicon.png
+!frontend/public/logo.png
