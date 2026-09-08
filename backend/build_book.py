@@ -34,8 +34,8 @@ from app.paths import backend_dir  # noqa: E402
 from app.real_mode import _DEAL_CYCLE_MONTHS, _canon, _deal_norm  # noqa: E402  (name normalizers)
 from train_real import FEATURES, _effective_increase, apply_increase_override, apply_override, prepare  # noqa: E402
 
-# Writable/persistent data+models root (== SRC_DIR in dev; a frozen build's per-user
-# %LOCALAPPDATA%/Horizon folder, NOT the read-only exe bundle - see app/paths.py).
+# Writable/persistent data+models root (== SRC_DIR in dev; redirected by
+# HORIZON_RENEWAL_DATA_DIR in a container - see app/paths.py).
 BACKEND = backend_dir()
 DATA = BACKEND / "data"
 DEALS = DATA / "sf_deals.csv"

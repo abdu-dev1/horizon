@@ -41,8 +41,8 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 from app.paths import backend_dir  # noqa: E402  (writable/persistent root - see app/paths.py)
 
-# BACKEND == the source backend/ dir in dev; a frozen build's per-user
-# %LOCALAPPDATA%/Horizon folder, NOT the read-only exe bundle.
+# BACKEND == the source backend/ dir in dev; redirected by
+# HORIZON_RENEWAL_DATA_DIR in a container.
 BACKEND = backend_dir()
 DATA = BACKEND / "data"
 UPLOADED_UPCOMING = DATA / "uploaded_upcoming.csv"
