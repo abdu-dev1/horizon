@@ -56,6 +56,12 @@ venv/
 !frontend/vite.config.js
 !frontend/package.json
 !frontend/package-lock.json
+#    Infrastructure-as-code and deployment scripts (infra/)
+!**/*.bicep
+!**/*.ps1
+!**/*.bicepparam
+#    Container build
+!Dockerfile
 #    Dependency manifests and docs
 !**/requirements.txt
 !**/*.md

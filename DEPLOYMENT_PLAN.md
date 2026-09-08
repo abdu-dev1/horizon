@@ -1,6 +1,20 @@
 # Horizon — Azure Deployment Plan
 
-Status: **planning** (nothing in phases 1-7 started). Written 2026-09-08.
+Status as of 2026-09-08: **phases 1-5 built and verified locally. Phase 6
+written but NOT executed** (no Azure CLI or Docker on the dev machine, so the
+image has never been built and no Azure resources exist). Phase 7 documented in
+[RUNBOOK.md](RUNBOOK.md); its verification steps run against a deployed URL and
+are therefore still outstanding.
+
+| Phase | State |
+|---|---|
+| 1 Strip the desktop path | done -- 1,808 lines removed |
+| 2 Containerize | code done; **image never built** (no Docker here) |
+| 3 Auth + authorization | done, verified against a running app |
+| 4 Role split | done, verified |
+| 5 Publish/bundle pipeline | done, round trip verified incl. edit preservation |
+| 6 Azure infrastructure | `infra/main.bicep` + `infra/deploy.ps1` written, **unvalidated** |
+| 7 Verify on the real URL | outstanding -- needs phase 6 |
 
 Target: the combined Horizon app (Renewals + New Business) running on Azure App
 Service behind Entra ID SSO, serving a **published, versioned data+model bundle**
