@@ -7,6 +7,11 @@ async function get(path) {
 }
 
 export const api = {
+  // Who is signed in, and whether they are an admin. Answered by the gateway
+  // (not either backend) so there is one implementation of identity for both
+  // products. Drives which pages the sidebar offers — but that is presentation
+  // only; the gateway enforces access regardless of what the UI renders.
+  me: () => get("/api/me"),
   health: () => get("/api/health"),
   summary: () => get("/api/summary"),
   forecast: () => get("/api/forecast"),
@@ -69,20 +74,30 @@ export const api = {
   },
 };
 
-export async function loadAll() {
+export async function loadAll(isAdmin = false) {
   // recommendations are computed lazily (they re-score every at-risk group and
   // can take a while) — fetched separately so the dashboard paints instantly.
-  const [health, summary, forecast, segments, groups, metrics, importance, diagnostics] =
-    await Promise.all([
-      api.health(),
-      api.summary(),
-      api.forecast(),
-      api.segments(),
-      api.groups(),
-      api.modelMetrics(),
-      api.modelImportance(),
-      api.modelDiagnostics(),
-    ]);
+  const [health, summary, forecast, segments, groups] = await Promise.all([
+    api.health(),
+    api.summary(),
+    api.forecast(),
+    api.segments(),
+    api.groups(),
+  ]);
+
+  // The three model-internals endpoints are admin-only at the gateway, which
+  // answers 403. They must NOT be part of the unconditional Promise.all above:
+  // one 403 rejects the whole batch, so every non-admin would have seen the
+  // "Cannot reach the Renewals API" screen instead of their dashboard. Only
+  // ModelLab (an admin page) reads these, so null is safe for everyone else.
+  const [metrics, importance, diagnostics] = isAdmin
+    ? await Promise.all([
+        api.modelMetrics(),
+        api.modelImportance(),
+        api.modelDiagnostics(),
+      ])
+    : [null, null, null];
+
   return {
     health, summary, forecast, segments, groups: groups.groups,
     metrics, importance, diagnostics,

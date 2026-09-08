@@ -40,14 +40,20 @@ export const apiNb = {
   },
 };
 
-export async function loadAllNb() {
-  const [health, summary, segments, groups, metrics, performance] = await Promise.all([
+export async function loadAllNb(isAdmin = false) {
+  const [health, summary, segments, groups, performance] = await Promise.all([
     apiNb.health(),
     apiNb.summary(),
     apiNb.segments(),
     apiNb.groups(),
-    apiNb.modelMetrics(),
     apiNb.performance(),
   ]);
+
+  // modelMetrics is admin-only at the gateway (403). Kept out of the batch
+  // above for the same reason as api.js's loadAll: a single 403 would reject
+  // the whole Promise.all and blank the New Business dashboard for every
+  // non-admin. Only NbModel (an admin page) reads it.
+  const metrics = isAdmin ? await apiNb.modelMetrics() : null;
+
   return { health, summary, segments, groups: groups.groups, metrics, performance };
 }

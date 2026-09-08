@@ -37,15 +37,21 @@ import NbDataQuality from "./pages/nb/NbDataQuality.jsx";
 import NbPricingLogic from "./pages/nb/NbPricingLogic.jsx";
 import NbPerformance from "./pages/nb/NbPerformance.jsx";
 
+// `admin: true` marks an operator surface — model internals, training-data
+// health, and the retrain/upload workflow. Business users get the 10 pages
+// without it; admins see all 15. The flag only controls what the sidebar
+// offers: the gateway enforces the same split on the underlying endpoints
+// (gateway/auth.py ADMIN_PREFIXES), so hiding a page is a UI courtesy, not
+// the access control. Keep the two lists in agreement.
 const RENEWAL_PAGES = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "forecast", label: "Renewal Forecast", icon: CalendarRange },
   { id: "needsdata", label: "Needs Data", icon: Inbox },
   { id: "book", label: "Upcoming Renewals", icon: BookOpen },
   { id: "database", label: "Renewal Database", icon: Database },
-  { id: "model", label: "Model Performance", icon: FlaskConical },
-  { id: "quality", label: "Data Quality", icon: ShieldCheck },
-  { id: "maintenance", label: "Model Maintenance", icon: Wrench },
+  { id: "model", label: "Model Performance", icon: FlaskConical, admin: true },
+  { id: "quality", label: "Data Quality", icon: ShieldCheck, admin: true },
+  { id: "maintenance", label: "Model Maintenance", icon: Wrench, admin: true },
 ];
 
 const NB_PAGES = [
@@ -53,8 +59,8 @@ const NB_PAGES = [
   { id: "pipeline", label: "Open Pipeline", icon: BookOpen },
   { id: "performance", label: "Sales Performance", icon: TrendingUp },
   { id: "database", label: "Win/Loss Database", icon: Database },
-  { id: "model", label: "Model Performance", icon: FlaskConical },
-  { id: "quality", label: "Data Quality", icon: ShieldCheck },
+  { id: "model", label: "Model Performance", icon: FlaskConical, admin: true },
+  { id: "quality", label: "Data Quality", icon: ShieldCheck, admin: true },
   { id: "pricinglogic", label: "Pricing Logic", icon: Scale },
 ];
 
@@ -84,6 +90,7 @@ export default function App() {
     () => localStorage.getItem("horizon-product") ?? "renewals"
   );
   const [page, setPage] = useState("overview");
+  const [me, setMe] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [nbData, setNbData] = useState(null);
@@ -108,25 +115,43 @@ export default function App() {
     localStorage.setItem("horizon-product", product);
   }, [product]);
 
-  // Both products' data load in parallel on startup, independently — a failure
-  // in one (e.g. the New Business backend not running yet in dev) never blocks
-  // the other, and switching tabs is instant with no per-switch loading spinner.
+  // Identity has to resolve BEFORE either product loads, because it decides
+  // what gets fetched: the model-internals endpoints are admin-only and answer
+  // 403, which would reject a batched load for everyone else (see api.js).
   useEffect(() => {
-    loadAll().then(setData).catch((e) => setError(e.message));
+    api
+      .me()
+      .then(setMe)
+      // Treat an unreadable identity as a non-admin rather than failing the
+      // app: the worst case is a signed-in user seeing only the business
+      // pages, which is the safe direction to fail in.
+      .catch(() => setMe({ email: null, is_admin: false }));
   }, []);
 
-  useEffect(() => {
-    loadAllNb().then(setNbData).catch((e) => setNbError(e.message));
-  }, []);
+  // Both products' data load in parallel once identity is known, independently
+  // — a failure in one (e.g. the New Business backend not running yet in dev)
+  // never blocks the other, and switching tabs is instant with no per-switch
+  // loading spinner.
+  const isAdmin = me?.is_admin === true;
 
-  const refreshNb = async () => setNbData(await loadAllNb());
+  useEffect(() => {
+    if (!me) return;
+    loadAll(isAdmin).then(setData).catch((e) => setError(e.message));
+  }, [me, isAdmin]);
+
+  useEffect(() => {
+    if (!me) return;
+    loadAllNb(isAdmin).then(setNbData).catch((e) => setNbError(e.message));
+  }, [me, isAdmin]);
+
+  const refreshNb = async () => setNbData(await loadAllNb(isAdmin));
 
   const handleRetrain = async () => {
     setRetraining(true);
     try {
       if (product === "renewals") {
         const result = await api.retrain();
-        const fresh = await loadAll();
+        const fresh = await loadAll(isAdmin);
         setData(fresh);
         setToast(`Model ${result.version} trained — holdout AUC ${result.metrics.auc.toFixed(3)}`);
       } else {
@@ -148,9 +173,14 @@ export default function App() {
     setPage("overview");
   };
 
-  const PAGES = product === "renewals" ? RENEWAL_PAGES : NB_PAGES;
+  const ALL_PAGES = product === "renewals" ? RENEWAL_PAGES : NB_PAGES;
+  const PAGES = ALL_PAGES.filter((p) => !p.admin || isAdmin);
   const SUBTITLES = product === "renewals" ? RENEWAL_SUBTITLES : NB_SUBTITLES;
+  // Fall back to the first VISIBLE page: `page` persists across a product
+  // switch, so a non-admin could otherwise land on an admin page id and render
+  // a blank main area.
   const activePage = PAGES.find((p) => p.id === page) ?? PAGES[0];
+  const pageId = activePage?.id;
 
   if (product === "renewals" && error)
     return (
@@ -205,7 +235,7 @@ export default function App() {
           {PAGES.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
-              className={`nav-item ${page === id ? "active" : ""}`}
+              className={`nav-item ${pageId === id ? "active" : ""}`}
               onClick={() => setPage(id)}
             >
               <Icon size={17} strokeWidth={2.2} />
@@ -214,6 +244,18 @@ export default function App() {
           ))}
 
           <div className="sidebar-footer">
+            {/* Who you are signed in as. Worth showing explicitly: with SSO
+                there is no login screen to remind you, and an admin needs to
+                be able to tell at a glance whether they are seeing the
+                operator pages because of their role or not. */}
+            {me?.email && (
+              <div style={{ marginBottom: 8, lineHeight: 1.5, wordBreak: "break-all" }}>
+                <div style={{ fontWeight: 600, color: "var(--text)" }}>{me.email}</div>
+                <div style={{ color: isAdmin ? "var(--teal, #14b8a6)" : "var(--text-faint)" }}>
+                  {isAdmin ? "Administrator" : "Standard access"}
+                </div>
+              </div>
+            )}
             {product === "renewals" ? (
               <>
                 <div className="model-chip">
@@ -272,19 +314,19 @@ export default function App() {
         </header>
 
         <main className="content">
-          {product === "renewals" && page === "overview" && <Overview data={data} />}
-          {product === "renewals" && page === "forecast" && <Forecast data={data} />}
-          {product === "renewals" && page === "needsdata" && (
-            <NeedsData data={data} onDataChange={async () => setData(await loadAll())} />
+          {product === "renewals" && pageId === "overview" && <Overview data={data} />}
+          {product === "renewals" && pageId === "forecast" && <Forecast data={data} />}
+          {product === "renewals" && pageId === "needsdata" && (
+            <NeedsData data={data} onDataChange={async () => setData(await loadAll(isAdmin))} />
           )}
-          {product === "renewals" && page === "book" && (
-            <Book data={data} onDataChange={async () => setData(await loadAll())} />
+          {product === "renewals" && pageId === "book" && (
+            <Book data={data} onDataChange={async () => setData(await loadAll(isAdmin))} />
           )}
-          {product === "renewals" && page === "database" && <RenewalDatabase />}
-          {product === "renewals" && page === "model" && <ModelLab data={data} />}
-          {product === "renewals" && page === "quality" && <DataQuality />}
-          {product === "renewals" && page === "maintenance" && (
-            <ModelMaintenance onDataChange={async () => setData(await loadAll())} />
+          {product === "renewals" && pageId === "database" && <RenewalDatabase />}
+          {product === "renewals" && pageId === "model" && <ModelLab data={data} />}
+          {product === "renewals" && pageId === "quality" && <DataQuality />}
+          {product === "renewals" && pageId === "maintenance" && (
+            <ModelMaintenance onDataChange={async () => setData(await loadAll(isAdmin))} />
           )}
 
           {product === "newbusiness" && nbError && (
@@ -303,21 +345,21 @@ export default function App() {
               <div style={{ fontWeight: 600 }}>Loading the New Business pipeline…</div>
             </div>
           )}
-          {product === "newbusiness" && nbData && page === "overview" && <NbOverview data={nbData} />}
-          {product === "newbusiness" && nbData && page === "pipeline" && (
+          {product === "newbusiness" && nbData && pageId === "overview" && <NbOverview data={nbData} />}
+          {product === "newbusiness" && nbData && pageId === "pipeline" && (
             <NbPipeline
               data={nbData}
               onDataChange={refreshNb}
               onNotify={(msg) => { setToast(msg); setTimeout(() => setToast(null), 6000); }}
             />
           )}
-          {product === "newbusiness" && nbData && page === "performance" && <NbPerformance data={nbData} />}
-          {product === "newbusiness" && nbData && page === "database" && <NbDatabase />}
-          {product === "newbusiness" && nbData && page === "model" && (
+          {product === "newbusiness" && nbData && pageId === "performance" && <NbPerformance data={nbData} />}
+          {product === "newbusiness" && nbData && pageId === "database" && <NbDatabase />}
+          {product === "newbusiness" && nbData && pageId === "model" && (
             <NbModel data={nbData} onDataChange={refreshNb} />
           )}
-          {product === "newbusiness" && nbData && page === "quality" && <NbDataQuality />}
-          {product === "newbusiness" && nbData && page === "pricinglogic" && <NbPricingLogic />}
+          {product === "newbusiness" && nbData && pageId === "quality" && <NbDataQuality />}
+          {product === "newbusiness" && nbData && pageId === "pricinglogic" && <NbPricingLogic />}
         </main>
       </div>
 
