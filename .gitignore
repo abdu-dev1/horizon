@@ -38,7 +38,6 @@ node_modules/
 **/_removed_synthetic*/
 **/backup_*/
 **/data/uploads/
-**/dist/
 **/build/pyi/
 **/build/embed/
 **/__pycache__/
@@ -56,6 +55,13 @@ venv/
 !frontend/vite.config.js
 !frontend/package.json
 !frontend/package-lock.json
+#    The BUILT frontend is committed on purpose (864 KB, 6 files). Azure App
+#    Service detects one language per app: for a Python app it installs
+#    requirements.txt but will never run `npm`, and this folder IS the UI the
+#    renewal backend serves at "/". Committing it means deployment needs no CI
+#    build step and no Node on the server. Rebuild with `npm run build` in
+#    frontend/ and commit the result whenever the UI changes.
+!frontend/dist/**
 #    Infrastructure-as-code and deployment scripts (infra/)
 !**/*.bicep
 !**/*.ps1
@@ -97,8 +103,11 @@ venv/
 .env
 .env.*
 
-# 6. The only binaries that ARE source: frontend branding assets, needed
-#    by the Vite build and referenced as the exe icon in Horizon.spec.
+# 6. Re-allowed after the step-5 backstop, which would otherwise catch these by
+#    extension. Branding assets (source) and the built frontend (the deployed
+#    UI -- see step 4). Listed last because in .gitignore the last matching
+#    rule wins.
 !frontend/public/favicon.ico
 !frontend/public/favicon.png
 !frontend/public/logo.png
+!frontend/dist/**
