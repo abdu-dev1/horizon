@@ -277,9 +277,28 @@ def segments(scored: pd.DataFrame, as_of: pd.Timestamp = AS_OF) -> dict:
         for value, grp in frame.groupby(key, observed=False):
             if len(grp) == 0:
                 continue
+            # Enrolled employees behind the segment, summed ONLY over groups
+            # whose lives are actually known.
+            #
+            # This must not be a plain sum of group_size: real_mode's display
+            # frame DEFAULTS unknown lives to 50 so a group still scores and
+            # renders, and flags that with lives_known (see the warning comment
+            # at real_mode.py's "group_size above defaults unknown lives to
+            # 50"). Summing it raw would quietly add 50 fabricated employees
+            # per unknown group and report the total as if it were measured --
+            # the exact "blank over fake" rule this project holds everywhere
+            # else. So the total covers known rows only, and ships with the
+            # share of the segment it represents, the same way the New Business
+            # side pairs premium_won with premium_coverage. None (not 0) when
+            # nothing in the segment carries a real figure, so the UI can show
+            # a blank rather than a confident zero.
+            known = grp["lives_known"].fillna(False).astype(bool)
+            lives = pd.to_numeric(grp["group_size"], errors="coerce").where(known)
             out.append({
                 "segment": label_fn(value),
                 "groups": int(len(grp)),
+                "lives": int(lives.sum()) if lives.notna().any() else None,
+                "lives_coverage": round(float(lives.notna().mean()), 3),
                 "retention_rate": round(float(grp["renewal_probability"].mean()), 4),
                 "premium_at_risk": float(grp["premium_at_risk"].sum()),
             })
@@ -297,6 +316,11 @@ def segments(scored: pd.DataFrame, as_of: pd.Timestamp = AS_OF) -> dict:
     return {
         "by_lob": agg(due, "line_of_business"),
         "by_rsd": agg(due, "rsd"),
+        # Account Manager sits beside RSD deliberately: they are different
+        # relationships with the same group (the RSD sold it, the AM services
+        # it), so retention reads differently across the two and an exec wants
+        # both. `am` is ~94% filled, comparable to rsd's ~91%.
+        "by_am": agg(due, "am"),
         "by_tenure": agg(due, "tenure_bucket", label_fn=lambda v: str(v)),
         "by_broker_tier": agg(due, "broker_tier", label_fn=lambda v: str(v)),
     }

@@ -26,6 +26,7 @@ from train_real import LABELS, _effective_increase, apply_increase_override, app
 REAL_MODEL_PATH = BACKEND_DIR / "models" / "real_latest.joblib"
 REAL_HISTORY = BACKEND_DIR / "data" / "real_history.csv"
 REAL_SCORED = BACKEND_DIR / "data" / "real_scored_book.csv"
+PEOPLE_ALIASES = BACKEND_DIR / "data" / "people_aliases.csv"
 # Salesforce "Account Management Renewals" deals export — the authoritative, CURRENT
 # renewal outcomes (Closed Won / Closed Lost / open). Drives the Actual Outcome column.
 REAL_DEALS = BACKEND_DIR / "data" / "sf_deals.csv"
@@ -175,8 +176,80 @@ def loss_ratio_status(nlr) -> str | None:
     return "Healthy"
 
 
+
+# --------------------------------------------------------------------------
+# People-name aliases (rsd / am)
+#
+# Both columns are free text typed by hand over years, so ONE person shows up
+# as "Scott" (117 rows), "Scott B" (14) and "Scott Brendamour" (53). Left
+# as-is that fragments every per-person view: on Overview's retention charts
+# all eight of the worst-retention Account Managers were first-name fragments
+# of people who appear again, healthier, further down -- a reader would
+# conclude someone is failing when their real book renews fine.
+#
+# This is a DISPLAY-level fix, applied in _display_frame() only. It is safe to
+# do here precisely because neither column is a model feature (train_real.py's
+# CATEGORICAL is product/carrier/state), so no alias can shift a prediction or
+# oblige a retrain -- it only changes how rows are attributed and grouped.
+#
+# data/people_aliases.csv is hand-reviewable and locally owned (it is in
+# bundle.DELTA_FILES, so a published bundle can never overwrite it). Columns:
+#   field     "rsd" or "am"
+#   alias     the raw value as typed
+#   canonical the name it should be counted as
+#   note      why, for the human reading the file later
+# Only mechanical cases belong in it: a bare first name or an initialled form
+# ("Scott B") that matches exactly one full name in the same column, or a
+# one-letter surname misspelling. Cases needing a human judgment about whether
+# two names are one person -- nicknames ("Lou Moeller" vs "Louis Moeller"),
+# or two different surnames sharing a first name ("Fiona Allen" vs "Fiona
+# Burnett") -- are deliberately NOT in it and stay split until someone decides.
+# Entries naming two people ("Alyssa Warsh / Buzz Hannum") are left alone too:
+# that is a data-entry question, not a spelling one.
+# --------------------------------------------------------------------------
+
+@functools.lru_cache(maxsize=1)
+def _people_aliases() -> dict[tuple[str, str], str]:
+    """{(field, alias_lower): canonical}. Cached; the file only changes when a
+    human edits it, and the process is restarted for any data change anyway."""
+    if not PEOPLE_ALIASES.exists():
+        return {}
+    try:
+        df = pd.read_csv(PEOPLE_ALIASES, dtype=str).fillna("")
+    except (OSError, pd.errors.ParserError):
+        return {}
+    out = {}
+    for _, r in df.iterrows():
+        field, alias, canon = (str(r.get(c, "")).strip() for c in ("field", "alias", "canonical"))
+        if field and alias and canon:
+            out[(field, alias.lower())] = canon
+    return out
+
+
+def _person(field: str, value) -> str:
+    """One rsd/am value, resolved through the alias table. Blank stays blank --
+    an unattributed renewal is a real thing an exec should see, not something
+    to fold into someone's book."""
+    if value is None or (isinstance(value, float) and pd.isna(value)) or pd.isna(value):
+        return "—"
+    raw = str(value).strip()
+    if not raw:
+        return "—"
+    return _people_aliases().get((field, raw.lower()), raw)
+
+
 def _lob(product) -> str:
     s = str(product or "").lower()
+    # Checked before every other bucket: a captive product's raw name often also
+    # contains "stop loss" (e.g. "Open Captive (Stop Loss with CS PBM)") or "self"
+    # (e.g. a self-funded captive arrangement), so checking those buckets first
+    # would misfile it there instead. This was silently happening -- Overview's
+    # "Retention by Line of Business" had no Captive bucket at all, so those rows
+    # fell into "Stop Loss Only" or, when no other keyword matched, the catch-all
+    # "HPS (unspecified)" -- even though the raw `product` value the Needs Data
+    # page shows for those same rows says "Captive" plainly.
+    if "captive" in s:
+        return "Captive"
     if "level" in s or s.strip() in ("lf",):
         return "HPS Level Funded"
     if any(t in s for t in ("traditional", "self", "payg", "sf")):
@@ -267,8 +340,8 @@ def _display_frame(scored: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
             # tri-state: True / False / None(unknown) — absence of data isn't "No"
             "recent_bor": (None if pd.isna(r.get("bor_change"))
                            else bool(r.get("bor_change") in (1, 1.0, True, "True"))),
-            "rsd": r.get("rsd") if pd.notna(r.get("rsd")) else "—",
-            "am": r.get("am") if pd.notna(r.get("am")) else "—",
+            "rsd": _person("rsd", r.get("rsd")),
+            "am": _person("am", r.get("am")),
             "carrier": r.get("carrier") if pd.notna(r.get("carrier")) else None,
             "tpa": r.get("tpa") if pd.notna(r.get("tpa")) else None,
             "corridor": float(r["corridor"]) if pd.notna(r.get("corridor")) else None,

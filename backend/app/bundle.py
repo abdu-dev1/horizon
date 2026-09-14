@@ -71,6 +71,8 @@ REQUIRED = ("data/real_history.csv", "data/real_scored_book.csv",
 DELTA_FILES = (
     "outcome_overrides.csv", "lob_overrides.csv", "excluded_groups.csv",
     "group_registry.csv", "uploaded_upcoming.csv",
+    # Hand-reviewed rsd/am name aliases -- see real_mode._people_aliases().
+    "people_aliases.csv",
 )
 
 
