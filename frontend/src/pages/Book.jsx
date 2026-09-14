@@ -143,6 +143,21 @@ export default function Book({ data, onDataChange }) {
       <div className="data-note">
         <Info size={15} />
         <div>
+          <b>"Data-complete" here only means loss ratio is loaded</b> — a group can still be
+          sitting here with other underwriting fields blank (premium, tenure, lasers, renewal
+          increase, etc.).
+          <div className="data-note-how">
+            Any field that's missing is scored on an imputed default rather than this group's
+            real number, so its score is less accurate than a fully filled-in one. To sharpen a
+            group here, load its block from the Executive Log / UW renewal sheet and re-import via
+            <b> Model Maintenance → Feed 1</b> — rows on this page aren&apos;t edited inline the
+            way <b>Needs Data</b> rows are.
+          </div>
+        </div>
+      </div>
+      <div className="data-note">
+        <Info size={15} />
+        <div>
           <b>New — "LR Status" flags loss-ratio risk.</b> The model now weighs a group's
           loss ratio more sharply, so groups running hot score lower on their own line.
           The badge tells you why: <span className="lr-status" style={{ color: "var(--red)" }}>Severe</span> (150%+)

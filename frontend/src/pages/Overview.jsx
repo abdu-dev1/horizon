@@ -21,7 +21,7 @@ import { useEffect, useState } from "react";
 import { ArrowRight, Lightbulb } from "lucide-react";
 import { api } from "../api.js";
 import { TIER_COLORS, fmtMoney, fmtNum, fmtPct } from "../format.js";
-import { KpiCard, Legend, ProbCell, RiskBadge, axisStyle, tooltipStyle } from "../components/shared.jsx";
+import { HoverTip, KpiCard, Legend, ProbCell, RiskBadge, axisStyle, tierColor, tooltipStyle } from "../components/shared.jsx";
 
 export default function Overview({ data }) {
   const { summary, segments, groups } = data;
@@ -149,8 +149,6 @@ export default function Overview({ data }) {
           <div className="card-title">Retention by Line of Business</div>
           <div className="card-sub">Expected retention and premium at risk per segment</div>
           <SegmentTable rows={segments.by_lob} />
-          <div className="drawer-section-title" style={{ marginTop: 18 }}>By RSD</div>
-          <SegmentTable rows={segments.by_rsd} />
         </div>
 
         <div className="card">
@@ -184,6 +182,24 @@ export default function Overview({ data }) {
             </table>
           </div>
         </div>
+      </div>
+
+      {/* People views sit together and read alike: the RSD sold the group, the
+          AM services it, so the same question ("whose book is at risk?") gets
+          the same shape twice rather than a table for one and a chart for the
+          other. Sorted worst-first -- the reason to open this page is to find
+          who needs help, not to admire the top of the list. */}
+      <div className="grid grid-2">
+        <RetentionByPerson
+          rows={segments.by_rsd}
+          title="Retention by RSD"
+          sub="Expected retention across each rep's book of upcoming renewals"
+        />
+        <RetentionByPerson
+          rows={segments.by_am}
+          title="Retention by Account Manager"
+          sub="The same book seen through the servicing relationship instead of the sale"
+        />
       </div>
 
       {(recLoading || recommendations.length > 0) && (
@@ -235,6 +251,79 @@ export default function Overview({ data }) {
   );
 }
 
+// A retention average over one or two renewals is noise, not performance --
+// the same problem the New Business leaderboard solves with its MIN_VOLUME
+// gate. Nothing is hidden here (a rep with one renewal is still a real bar an
+// exec may need to see); the thin ones are just drawn recessive and called out
+// in the caption, so a 3% bar on a single group cannot be mistaken for a
+// collapsing book.
+const MIN_RENEWALS = 3;
+
+function RetentionByPerson({ rows, title, sub }) {
+  const data = rows.map((r) => ({ ...r, retentionPct: +(r.retention_rate * 100).toFixed(1) }));
+  const thin = data.filter((r) => r.groups < MIN_RENEWALS).length;
+  // One row needs ~22px to stay legible; the chart grows with the list rather
+  // than squeezing 28 names into a fixed height.
+  const height = Math.max(240, data.length * 22 + 44);
+
+  return (
+    <div className="card">
+      <div className="card-title">{title}</div>
+      <div className="card-sub">
+        {sub}. Bar color is the same risk ramp used everywhere else in the app.
+        {thin > 0 && ` ${thin} faded bar${thin === 1 ? "" : "s"} cover fewer than ${MIN_RENEWALS} renewals — too few to read as a trend.`}
+      </div>
+      <ResponsiveContainer width="100%" height={height}>
+        <BarChart data={data} layout="vertical" margin={{ top: 4, right: 16, left: 4, bottom: 4 }}>
+          <CartesianGrid stroke="#16223a" horizontal={false} />
+          <XAxis
+            type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`}
+            tick={axisStyle} axisLine={false} tickLine={false}
+          />
+          <YAxis
+            type="category" dataKey="segment" width={132}
+            tick={axisStyle} axisLine={false} tickLine={false}
+          />
+          <Tooltip content={<PersonTip />} isAnimationActive={false} />
+          <Bar dataKey="retentionPct" radius={[0, 4, 4, 0]} maxBarSize={18} isAnimationActive={false}>
+            {data.map((r) => (
+              <Cell
+                key={r.segment}
+                fill={tierColor(r.retention_rate)}
+                fillOpacity={r.groups < MIN_RENEWALS ? 0.42 : 1}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function PersonTip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const r = payload[0].payload;
+  return (
+    <div className="chart-tip">
+      <div className="chart-tip-head">{r.segment}</div>
+      <div>{fmtPct(r.retention_rate, 1)} expected retention</div>
+      <div>
+        {fmtNum(r.groups)} renewal{r.groups === 1 ? "" : "s"}
+        {r.lives != null && ` · ${fmtNum(r.lives)} lives`}
+      </div>
+      <div className="chart-tip-dim">{fmtMoney(r.premium_at_risk)} expected lost premium</div>
+      {r.groups < MIN_RENEWALS && (
+        <div className="chart-tip-dim">Too few renewals to read as a trend.</div>
+      )}
+      {r.lives != null && r.lives_coverage != null && r.lives_coverage < 1 && (
+        <div className="chart-tip-dim">
+          Lives cover {fmtPct(r.lives_coverage, 0)} of these groups.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SegmentTable({ rows }) {
   return (
     <div className="table-wrap">
@@ -243,6 +332,7 @@ function SegmentTable({ rows }) {
           <tr>
             <th>Segment</th>
             <th>Groups</th>
+            <th>Lives</th>
             <th>Retention</th>
             <th>Exp. Lost</th>
           </tr>
@@ -252,6 +342,17 @@ function SegmentTable({ rows }) {
             <tr key={s.segment} style={{ cursor: "default" }}>
               <td className="cell-main">{s.segment}</td>
               <td className="mono">{fmtNum(s.groups)}</td>
+              {/* Enrolled employees. A segment where some groups have no lives
+                  figure gets its coverage shown rather than a total that looks
+                  complete -- see insights.py's agg(). */}
+              <td className="mono">
+                {s.lives == null ? <span className="muted">—</span> : fmtNum(s.lives)}
+                {s.lives != null && s.lives_coverage != null && s.lives_coverage < 1 && (
+                  <HoverTip label={`${fmtPct(s.lives_coverage, 0)} of this segment's groups carry a lives figure — the rest aren't counted here`}>
+                    <span className="cell-dim"> *</span>
+                  </HoverTip>
+                )}
+              </td>
               <td><ProbCell p={s.retention_rate} showTag={false} /></td>
               <td className="mono">{fmtMoney(s.premium_at_risk)}</td>
             </tr>

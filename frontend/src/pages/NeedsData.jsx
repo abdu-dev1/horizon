@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Info, Loader2 } from "lucide-react";
 import { api } from "../api.js";
 import { fmtDate } from "../format.js";
 import { GroupDrawer } from "./Book.jsx";
@@ -75,6 +75,20 @@ export default function NeedsData({ data, onDataChange }) {
 
   return (
     <>
+      <div className="data-note">
+        <Info size={15} />
+        <div>
+          <b>As soon as Loss Ratio % is filled in and saved, the group moves to Upcoming
+          Renewals</b> — that one field alone is enough to graduate it, even with everything else
+          on the row still blank.
+          <div className="data-note-how">
+            The other fields aren&apos;t required to move it, but the model still uses them — a
+            blank field is scored on an imputed default, not this group's real number. Fill in as
+            much as you have (premium, tenure, lasers, renewal increase, etc.), not just the loss
+            ratio, so the score that moves over is actually accurate.
+          </div>
+        </div>
+      </div>
       <div className="card">
         <div className="card-title">
           {rows.length} renewals awaiting underwriting
@@ -83,9 +97,8 @@ export default function NeedsData({ data, onDataChange }) {
           These came from the pipeline list with <b>no loss ratio / quoted rate loaded yet</b>, so
           they aren&apos;t scored with confidence and are kept out of Upcoming Renewals. Every field
           the model uses is shown and editable below, pre-filled with what's already known — unknown
-          fields stay blank, never guessed. Fill in what you have and hit Save; the group moves into
-          <b> Upcoming Renewals</b> the instant it has a loss ratio and renewal increase. (Updating a
-          batch of groups at once? Use the <b>upload</b> on the Model Maintenance page instead.)
+          fields stay blank, never guessed. (Updating a batch of groups at once? Use the
+          <b> upload</b> on the Model Maintenance page instead.)
         </div>
         <div className="table-wrap">
           <table className="uw-table">
