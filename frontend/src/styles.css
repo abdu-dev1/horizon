@@ -1474,6 +1474,62 @@ select.filter,
    to screen readers. */
 .spark { display: block; overflow: visible; }
 
+/* Likelihood-band mix for one entity's open pipeline. A single stacked bar
+   rather than four numbers: the question it answers is "how much of this
+   rep's pipeline is actually good?", which is a part-to-whole read. Segments
+   carry a 2px surface gap (mark spec) so adjacent bands never bleed into one
+   another, and the legend underneath repeats each band as text + count. */
+.bandmix { display: flex; flex-direction: column; gap: 9px; }
+.bandmix-track {
+  display: flex;
+  height: 12px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: var(--panel-2);
+  gap: 2px;
+}
+.bandmix-seg { display: block; height: 100%; min-width: 3px; }
+.bandmix-track .hovertip { display: flex; }
+.bandmix-track > .hovertip:first-child .bandmix-seg { border-radius: 99px 0 0 99px; }
+.bandmix-track > .hovertip:last-child .bandmix-seg { border-radius: 0 99px 99px 0; }
+
+/* Clickable segment/leaderboard rows: the affordance that tells an exec a row
+   opens a detail view. Kept as its own class so the non-drillable tables
+   (which stay cursor:default) can't accidentally inherit it. */
+tr.row-drill { cursor: pointer; transition: background 0.12s ease; }
+tr.row-drill:hover { background: var(--panel-2); }
+tr.row-drill:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.drill-hint { font-size: 10.5px; color: var(--text-faint); font-weight: 500; }
+
+/* Header strip of the entity deep-dive page (one RSD / broker / product /
+   industry / state). The page title itself is the entity's name, rendered by
+   the app's own topbar -- this row carries only the way back out and the
+   at-a-glance counts, so the KPI row below it stays the first real content. */
+.entity-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.entity-chips { display: flex; gap: 7px; flex-wrap: wrap; }
+
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease;
+}
+.btn-back:hover { color: var(--text); border-color: var(--accent); }
+
 /* Data Quality: marks a field the model actually trains on, so a
    "67% on history / 0% on the open pipeline" row reads as a broken feature
    rather than a neutral data gap. Paired with a title tooltip -- the dot is

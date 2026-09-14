@@ -5,7 +5,9 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { fmtMoney, fmtNum, fmtPct } from "../../format.js";
-import { HoverTip, KpiCard, axisStyle } from "../../components/shared.jsx";
+import {
+  CHART_INK as INK, CHART_INK_DIM as INK_DIM, KpiCard, RateBar, Spark, axisStyle,
+} from "../../components/shared.jsx";
 
 // One hue for every chart on this page, deliberately. The alternative -- a
 // categorical palette across 7-8 products or RSDs on shared axes -- is
@@ -13,10 +15,11 @@ import { HoverTip, KpiCard, axisStyle } from "../../components/shared.jsx";
 // of them into an "Other" bucket anyway. Small multiples (a sparkline per
 // leaderboard row) carry the same per-entity trend with one hue and no legend,
 // so color never has to encode identity here at all.
-const INK = "#38bdf8";
-const INK_DIM = "#64748b";
-const UP = "#34d399";
-const DOWN = "#f87171";
+//
+// The four color constants and the Spark/RateBar components themselves now
+// live in components/shared.jsx -- the entity deep-dive page (NbEntityPage)
+// renders the same comparison bar and sparkline, and a second copy is how two
+// views of one number drift apart.
 
 // A year with quotes still open can only go UP as they decide, so it is drawn
 // recessive and flagged in the caption rather than plotted as if final.
@@ -24,7 +27,7 @@ const PROVISIONAL_OPACITY = 0.42;
 
 const PAGE_SIZE = 25; // matches NbPipeline's table page size
 
-export default function NbPerformance({ data }) {
+export default function NbPerformance({ data, onDrill }) {
   const perf = data.performance;
 
   return (
@@ -32,7 +35,7 @@ export default function NbPerformance({ data }) {
       <HeadlineKpis perf={perf} />
       <YearCharts perf={perf} />
       <SizeAndSeasonCharts perf={perf} />
-      <LeaderboardCard perf={perf} />
+      <LeaderboardCard perf={perf} onDrill={onDrill} />
     </>
   );
 }
@@ -260,7 +263,7 @@ const SizeAndSeasonCharts = memo(function SizeAndSeasonCharts({ perf }) {
 // sluggishness, not the charts existing per se. Paginating at PAGE_SIZE also
 // caps the sparkline count per render at 25 rather than up to 741 for Broker.
 
-const LeaderboardCard = memo(function LeaderboardCard({ perf }) {
+const LeaderboardCard = memo(function LeaderboardCard({ perf, onDrill }) {
   const [board, setBoard] = useState("rsd");
   const [volumeOnly, setVolumeOnly] = useState(true);
   const [page, setPage] = useState(0);
@@ -286,7 +289,8 @@ const LeaderboardCard = memo(function LeaderboardCard({ perf }) {
           <div className="card-title">Leaderboard</div>
           <div className="card-sub">
             All-time decided quotes. Bars compare to the {fmtPct(h.win_rate, 1)} book average;
-            the spark column is that row’s own win rate by year.
+            the spark column is that row’s own win rate by year. ·{" "}
+            <span className="drill-hint">click any row for its full detail page</span>
           </div>
         </div>
         <div className="filter-row">
@@ -319,7 +323,10 @@ const LeaderboardCard = memo(function LeaderboardCard({ perf }) {
           </thead>
           <tbody>
             {pageRows.map((r) => (
-              <LeaderboardRow key={r.label} r={r} avg={h.win_rate} />
+              <LeaderboardRow
+                key={r.label} r={r} avg={h.win_rate}
+                onDrill={() => onDrill(board, r.label)}
+              />
             ))}
           </tbody>
         </table>
@@ -348,9 +355,16 @@ const LeaderboardCard = memo(function LeaderboardCard({ perf }) {
 // One row, memoized on its own row object + the book average -- neither
 // changes as the parent's unrelated state (e.g. a hover elsewhere) updates,
 // so a re-render of the table shell doesn't re-run every row's sparkline math.
-const LeaderboardRow = memo(function LeaderboardRow({ r, avg }) {
+const LeaderboardRow = memo(function LeaderboardRow({ r, avg, onDrill }) {
   return (
-    <tr style={{ cursor: "default" }}>
+    <tr
+      className="row-drill"
+      tabIndex={0}
+      onClick={onDrill}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onDrill(); }
+      }}
+    >
       <td className="cell-main">
         {r.label}
         {!r.enough_volume && <span className="cell-dim"> · low volume</span>}
@@ -365,66 +379,6 @@ const LeaderboardRow = memo(function LeaderboardRow({ r, avg }) {
   );
 });
 
-// ---------------------------------------------------------------- bits
-
-// A win rate on its own is hard to place; the bar is drawn relative to the book
-// average so "good" and "bad" read without doing arithmetic. Green/red here is
-// a two-state comparison against one reference, always paired with the numeric
-// rate in the neighbouring column, so color is never the only signal.
-function RateBar({ rate, avg }) {
-  if (rate == null) return <span className="muted">—</span>;
-  const ratio = avg > 0 ? rate / avg : 0;
-  const width = Math.min(100, (ratio / 3) * 100);
-  const above = rate >= avg;
-  return (
-    <HoverTip label={`${ratio.toFixed(2)}× the ${(avg * 100).toFixed(1)}% book average`}>
-      <div className="ratebar">
-        <div className="ratebar-track">
-          <div className="ratebar-fill" style={{ width: `${width}%`, background: above ? UP : DOWN }} />
-        </div>
-        <span className="ratebar-num" style={{ color: above ? UP : DOWN }}>
-          {ratio.toFixed(2)}×
-        </span>
-      </div>
-    </HoverTip>
-  );
-}
-
-// Small multiple: one row's win rate by year. One hue, no axes, no legend --
-// the shape is the message, and the table beside it carries every exact number.
-const Spark = memo(function Spark({ points, avg }) {
-  // Only settled years form the line. An in_progress year holding a handful of
-  // undecided quotes reads as a crash to zero at the right edge, which is the
-  // opposite of what it means (that rate can only rise) -- it stays in the
-  // hover readout instead, labelled.
-  const all = (points ?? []).filter((p) => p.win_rate != null);
-  const pts = all.filter((p) => !p.in_progress);
-  if (pts.length < 2) return <span className="muted">—</span>;
-  const w = 88, hgt = 26, pad = 3;
-  const max = Math.max(avg * 2, ...pts.map((p) => p.win_rate)) || 1;
-  const x = (i) => pad + (i * (w - 2 * pad)) / (pts.length - 1);
-  const y = (v) => hgt - pad - (v / max) * (hgt - 2 * pad);
-  const path = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.win_rate).toFixed(1)}`).join(" ");
-  const last = pts[pts.length - 1];
-  const title = all
-    .map((p) => `${p.year}: ${(p.win_rate * 100).toFixed(1)}% (${p.wins}/${p.quotes})${p.in_progress ? " — still in progress" : ""}`)
-    .join("\n");
-  return (
-    <HoverTip label={title}>
-      <svg width={w} height={hgt} className="spark" role="img" aria-label={title}>
-        <line x1={pad} x2={w - pad} y1={y(avg)} y2={y(avg)} stroke="#5b6c8c" strokeDasharray="3 3" strokeWidth="1" />
-        <path d={path} fill="none" stroke={INK} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        {/* 4px radius = an 8px marker, per the mark spec, with a 2px surface
-            ring so it stays legible where it overlaps the average line. The
-            ring uses var(--panel) rather than a literal so it works in light
-            mode. */}
-        <circle cx={x(pts.length - 1)} cy={y(last.win_rate)} r="4"
-                fill={last.win_rate >= avg ? UP : DOWN}
-                stroke="var(--panel)" strokeWidth="2" />
-      </svg>
-    </HoverTip>
-  );
-});
 
 function YearTip({ active, payload, volume }) {
   if (!active || !payload?.length) return null;

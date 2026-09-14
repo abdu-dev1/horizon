@@ -31,6 +31,7 @@ import DataQuality from "./pages/DataQuality.jsx";
 import ModelMaintenance from "./pages/ModelMaintenance.jsx";
 import PublishPanel from "./components/PublishPanel.jsx";
 import NbOverview from "./pages/nb/NbOverview.jsx";
+import NbEntityPage from "./pages/nb/NbEntityPage.jsx";
 import NbPipeline from "./pages/nb/NbPipeline.jsx";
 import NbDatabase from "./pages/nb/NbDatabase.jsx";
 import NbModel from "./pages/nb/NbModel.jsx";
@@ -86,11 +87,23 @@ const NB_SUBTITLES = {
   pricinglogic: "What the market-pricing comparison rule does, and where it shows up",
 };
 
+// Reads naturally in the focus page's subtitle ("...attributed to this rep").
+const NB_FOCUS_NOUN = {
+  rsd: "rep", broker: "broker", product: "product line",
+  industry: "industry", state: "state",
+};
+
 export default function App() {
   const [product, setProduct] = useState(
     () => localStorage.getItem("horizon-product") ?? "renewals"
   );
   const [page, setPage] = useState("overview");
+  // The New Business entity deep-dive (one RSD / broker / product / industry /
+  // state). Held here rather than inside a page because it REPLACES the main
+  // content area and needs its own title -- it is a destination, not a popup.
+  // {kind, name, from} -- `from` is the page id to return to, so Back lands
+  // where you actually clicked rather than always on Overview.
+  const [nbFocus, setNbFocus] = useState(null);
   const [me, setMe] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -160,6 +173,14 @@ export default function App() {
   const switchProduct = (p) => {
     setProduct(p);
     setPage("overview");
+    setNbFocus(null);
+  };
+
+  // Any sidebar navigation leaves the entity deep-dive -- otherwise clicking
+  // "Open Pipeline" would appear to do nothing while the focus page stayed up.
+  const goToPage = (id) => {
+    setPage(id);
+    setNbFocus(null);
   };
 
   const ALL_PAGES = product === "renewals" ? RENEWAL_PAGES : NB_PAGES;
@@ -224,8 +245,8 @@ export default function App() {
           {PAGES.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
-              className={`nav-item ${pageId === id ? "active" : ""}`}
-              onClick={() => setPage(id)}
+              className={`nav-item ${pageId === id && !nbFocus ? "active" : ""}`}
+              onClick={() => goToPage(id)}
             >
               <Icon size={17} strokeWidth={2.2} />
               {label}
@@ -278,8 +299,12 @@ export default function App() {
               {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
             </button>
             <div>
-              <div className="page-title">{activePage.label}</div>
-              <div className="page-sub">{SUBTITLES[page]}</div>
+              <div className="page-title">{nbFocus ? nbFocus.name : activePage.label}</div>
+              <div className="page-sub">
+                {nbFocus
+                  ? `Every open quote and every decided quote attributed to this ${NB_FOCUS_NOUN[nbFocus.kind] ?? nbFocus.kind}`
+                  : SUBTITLES[page]}
+              </div>
             </div>
           </div>
           <div className="topbar-right">
@@ -341,24 +366,43 @@ export default function App() {
               <div style={{ fontWeight: 600 }}>Loading the New Business pipeline…</div>
             </div>
           )}
-          {product === "newbusiness" && nbData && pageId === "overview" && <NbOverview data={nbData} />}
-          {product === "newbusiness" && nbData && pageId === "pipeline" && (
+          {product === "newbusiness" && nbData && nbFocus && (
+            <NbEntityPage
+              kind={nbFocus.kind}
+              name={nbFocus.name}
+              data={nbData}
+              onBack={() => { setPage(nbFocus.from); setNbFocus(null); }}
+              backLabel={(NB_PAGES.find((p) => p.id === nbFocus.from) ?? NB_PAGES[0]).label}
+            />
+          )}
+          {product === "newbusiness" && nbData && !nbFocus && pageId === "overview" && (
+            <NbOverview
+              data={nbData}
+              onDrill={(kind, name) => setNbFocus({ kind, name, from: "overview" })}
+            />
+          )}
+          {product === "newbusiness" && nbData && !nbFocus && pageId === "pipeline" && (
             <NbPipeline
               data={nbData}
               onDataChange={refreshNb}
               onNotify={(msg) => { setToast(msg); setTimeout(() => setToast(null), 6000); }}
             />
           )}
-          {product === "newbusiness" && nbData && pageId === "performance" && <NbPerformance data={nbData} />}
-          {product === "newbusiness" && nbData && pageId === "database" && <NbDatabase />}
-          {product === "newbusiness" && nbData && pageId === "model" && (
+          {product === "newbusiness" && nbData && !nbFocus && pageId === "performance" && (
+            <NbPerformance
+              data={nbData}
+              onDrill={(kind, name) => setNbFocus({ kind, name, from: "performance" })}
+            />
+          )}
+          {product === "newbusiness" && nbData && !nbFocus && pageId === "database" && <NbDatabase />}
+          {product === "newbusiness" && nbData && !nbFocus && pageId === "model" && (
             <div style={{ display: "grid", gap: 18 }}>
               <PublishPanel client={apiNb} product="newbusiness" onApplied={handlePublished} />
               <NbModel data={nbData} onDataChange={refreshNb} />
             </div>
           )}
-          {product === "newbusiness" && nbData && pageId === "quality" && <NbDataQuality />}
-          {product === "newbusiness" && nbData && pageId === "pricinglogic" && <NbPricingLogic />}
+          {product === "newbusiness" && nbData && !nbFocus && pageId === "quality" && <NbDataQuality />}
+          {product === "newbusiness" && nbData && !nbFocus && pageId === "pricinglogic" && <NbPricingLogic />}
         </main>
       </div>
 

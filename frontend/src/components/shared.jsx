@@ -1,4 +1,14 @@
-import { NB_BAND_COLORS, TIER_COLORS, fmtPct } from "../format.js";
+import { memo } from "react";
+import { NB_BAND_COLORS, TIER_COLORS, fmtNum, fmtPct } from "../format.js";
+
+// One chart hue plus a two-state comparison pair (above/below a reference).
+// Lives here rather than in NbPerformance.jsx because Spark and RateBar below
+// are now used by both that page and the RSD/broker drawer -- two copies of
+// these values is exactly how a palette silently drifts.
+export const CHART_INK = "#38bdf8";
+export const CHART_INK_DIM = "#64748b";
+export const UP = "#34d399";
+export const DOWN = "#f87171";
 
 // A styled replacement for a native `title=` tooltip -- the OS-rendered kind
 // is tiny, low-contrast, ignores line breaks inconsistently across browsers,
@@ -104,6 +114,103 @@ export function Legend({ items }) {
           {label}
         </div>
       ))}
+    </div>
+  );
+}
+
+// A win rate on its own is hard to place; the bar is drawn relative to a
+// reference (the book average) so "good" and "bad" read without doing
+// arithmetic. Green/red here is a two-state comparison against one reference,
+// always paired with the numeric multiple, so color is never the only signal.
+// Moved here from NbPerformance.jsx when the RSD/broker drawer needed the
+// same comparison -- one implementation, not two that can disagree.
+export function RateBar({ rate, avg }) {
+  if (rate == null) return <span className="muted">—</span>;
+  const ratio = avg > 0 ? rate / avg : 0;
+  const width = Math.min(100, (ratio / 3) * 100);
+  const above = rate >= avg;
+  return (
+    <HoverTip label={`${ratio.toFixed(2)}× the ${(avg * 100).toFixed(1)}% book average`}>
+      <div className="ratebar">
+        <div className="ratebar-track">
+          <div className="ratebar-fill" style={{ width: `${width}%`, background: above ? UP : DOWN }} />
+        </div>
+        <span className="ratebar-num" style={{ color: above ? UP : DOWN }}>
+          {ratio.toFixed(2)}×
+        </span>
+      </div>
+    </HoverTip>
+  );
+}
+
+// Small multiple: one entity's win rate by year. One hue, no axes, no legend --
+// the shape is the message, and the numbers live in the table or hero beside it.
+export const Spark = memo(function Spark({ points, avg, w = 88, hgt = 26 }) {
+  // Only settled years form the line. An in_progress year holding a handful of
+  // undecided quotes reads as a crash to zero at the right edge, which is the
+  // opposite of what it means (that rate can only rise) -- it stays in the
+  // hover readout instead, labelled.
+  const all = (points ?? []).filter((p) => p.win_rate != null);
+  const pts = all.filter((p) => !p.in_progress);
+  if (pts.length < 2) return <span className="muted">—</span>;
+  const pad = 3;
+  const max = Math.max(avg * 2, ...pts.map((p) => p.win_rate)) || 1;
+  const x = (i) => pad + (i * (w - 2 * pad)) / (pts.length - 1);
+  const y = (v) => hgt - pad - (v / max) * (hgt - 2 * pad);
+  const path = pts.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.win_rate).toFixed(1)}`).join(" ");
+  const last = pts[pts.length - 1];
+  const title = all
+    .map((p) => `${p.year}: ${(p.win_rate * 100).toFixed(1)}% (${p.wins}/${p.quotes})${p.in_progress ? " — still in progress" : ""}`)
+    .join("\n");
+  return (
+    <HoverTip label={title}>
+      <svg width={w} height={hgt} className="spark" role="img" aria-label={title}>
+        <line x1={pad} x2={w - pad} y1={y(avg)} y2={y(avg)} stroke="#5b6c8c" strokeDasharray="3 3" strokeWidth="1" />
+        <path d={path} fill="none" stroke={CHART_INK} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        {/* 4px radius = an 8px marker, per the mark spec, with a 2px surface
+            ring so it stays legible where it overlaps the average line. The
+            ring uses var(--panel) rather than a literal so it works in light
+            mode. */}
+        <circle cx={x(pts.length - 1)} cy={y(last.win_rate)} r="4"
+                fill={last.win_rate >= avg ? UP : DOWN}
+                stroke="var(--panel)" strokeWidth="2" />
+      </svg>
+    </HoverTip>
+  );
+});
+
+// Categorical mix across the four likelihood bands, in the model's own fixed
+// band order (never sorted by size -- a band's position is its meaning, and a
+// re-ordering bar makes two entities impossible to compare side by side). Each
+// segment gets a 2px surface gap per the mark spec, and the legend beneath
+// repeats every band as text + count so color is never the only signal.
+export function BandMixBar({ counts, total }) {
+  const order = ["High", "Moderate", "Low", "Very Low"];
+  if (!total) return <div className="driver-empty">No open quotes to break down.</div>;
+  return (
+    <div className="bandmix">
+      <div className="bandmix-track">
+        {order.map((b) => {
+          const n = counts[b] || 0;
+          if (!n) return null;
+          return (
+            <HoverTip key={b} label={`${b}: ${fmtNum(n)} of ${fmtNum(total)} open quotes (${fmtPct(n / total, 0)})`}>
+              <span
+                className="bandmix-seg"
+                style={{ width: `${(n / total) * 100}%`, background: NB_BAND_COLORS[b] }}
+              />
+            </HoverTip>
+          );
+        })}
+      </div>
+      <div className="legend-row">
+        {order.map((b) => (
+          <div key={b} className="legend-item">
+            <span className="legend-swatch" style={{ background: NB_BAND_COLORS[b] }} />
+            {b} ({fmtNum(counts[b] || 0)})
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

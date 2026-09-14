@@ -3,7 +3,11 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { NB_BAND_COLORS, fmtMoney, fmtNum, fmtPct } from "../../format.js";
 import { KpiCard, Legend, ProbCell, LikelihoodBadge, tooltipStyle } from "../../components/shared.jsx";
 
-export default function NbOverview({ data }) {
+// Every segment table below is keyed by a real per-quote column (rsd, broker,
+// product, industry), so each one can drill into the entity deep-dive page.
+// `onDrill(kind, name)` is owned by App.jsx because that page REPLACES the
+// main content area -- see NbEntityPage.
+export default function NbOverview({ data, onDrill }) {
   const { summary, segments, groups } = data;
 
   const bandData = Object.entries(summary.band_counts).map(([name, value]) => ({ name, value }));
@@ -114,33 +118,46 @@ export default function NbOverview({ data }) {
       <div className="grid grid-2">
         <div className="card">
           <div className="card-title">Open Pipeline by Product</div>
-          <div className="card-sub">Expected wins summed across each product line</div>
-          <SegmentTable rows={segments.by_product_open} />
+          <div className="card-sub">
+            Expected wins summed across each product line · <span className="drill-hint">click a row for its full detail</span>
+          </div>
+          <SegmentTable rows={segments.by_product_open} kind="product" onDrill={onDrill} />
         </div>
         <div className="card">
           <div className="card-title">Open Pipeline by RSD</div>
-          <div className="card-sub">Expected wins summed per rep</div>
-          <SegmentTable rows={segments.by_rsd_open} />
+          <div className="card-sub">
+            Expected wins summed per rep · <span className="drill-hint">click a rep for their full detail</span>
+          </div>
+          <SegmentTable rows={segments.by_rsd_open} kind="rsd" onDrill={onDrill} />
         </div>
       </div>
 
       <div className="grid grid-2">
         <div className="card">
           <div className="card-title">All-Time Win Rate by Broker</div>
-          <div className="card-sub">Historical decided quotes only — the same track record the model reads</div>
-          <HistorySegmentTable rows={segments.by_broker_history.slice(0, 12)} />
+          <div className="card-sub">
+            Historical decided quotes only — the same track record the model reads ·{" "}
+            <span className="drill-hint">click a broker for their full detail</span>
+          </div>
+          <HistorySegmentTable rows={segments.by_broker_history.slice(0, 12)} kind="broker" onDrill={onDrill} />
         </div>
         <div className="card">
           <div className="card-title">All-Time Win Rate by Industry</div>
-          <div className="card-sub">Historical decided quotes only</div>
-          <HistorySegmentTable rows={segments.by_industry_history.slice(0, 12)} />
+          <div className="card-sub">
+            Historical decided quotes only · <span className="drill-hint">click an industry for its full detail</span>
+          </div>
+          <HistorySegmentTable rows={segments.by_industry_history.slice(0, 12)} kind="industry" onDrill={onDrill} />
         </div>
       </div>
+
     </>
   );
 }
 
-function SegmentTable({ rows }) {
+// `kind` is the quote column this table segments by, and is what the deep-dive
+// page filters on -- so the label in the first cell has to be the raw column
+// value the backend grouped by, not a prettified version of it.
+function SegmentTable({ rows, kind, onDrill }) {
   return (
     <div className="table-wrap">
       <table>
@@ -153,7 +170,18 @@ function SegmentTable({ rows }) {
         </thead>
         <tbody>
           {rows.map((s) => (
-            <tr key={s.label} style={{ cursor: "default" }}>
+            <tr
+              key={s.label}
+              className="row-drill"
+              tabIndex={0}
+              onClick={() => onDrill(kind, s.label)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onDrill(kind, s.label);
+                }
+              }}
+            >
               <td className="cell-main">{s.label}</td>
               <td className="mono">{fmtNum(s.open_quotes)}</td>
               <td className="mono">{s.expected_wins.toFixed(1)}</td>
@@ -165,7 +193,7 @@ function SegmentTable({ rows }) {
   );
 }
 
-function HistorySegmentTable({ rows }) {
+function HistorySegmentTable({ rows, kind, onDrill }) {
   return (
     <div className="table-wrap">
       <table>
@@ -178,7 +206,18 @@ function HistorySegmentTable({ rows }) {
         </thead>
         <tbody>
           {rows.map((s) => (
-            <tr key={s.label} style={{ cursor: "default" }}>
+            <tr
+              key={s.label}
+              className="row-drill"
+              tabIndex={0}
+              onClick={() => onDrill(kind, s.label)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onDrill(kind, s.label);
+                }
+              }}
+            >
               <td className="cell-main">{s.label}</td>
               <td className="mono">{fmtNum(s.quotes)}</td>
               <td><ProbCell p={s.win_rate} showTag={false} colorFn={() => "#38bdf8"} /></td>
