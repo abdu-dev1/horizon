@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarRange, Database, Percent, Search, TrendingDown, X } from "lucide-react";
+import { CalendarRange, Database, Percent, Search, Trash2, TrendingDown, X } from "lucide-react";
 import { api } from "../api.js";
 import { fmtDate, fmtMoney, fmtNum } from "../format.js";
 import { KpiCard } from "../components/shared.jsx";
@@ -46,8 +46,10 @@ export default function RenewalDatabase() {
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState(null);
 
+  const loadDb = () => api.renewalDatabase().then(setDb).catch((e) => setErr(e.message));
+
   useEffect(() => {
-    api.renewalDatabase().then(setDb).catch((e) => setErr(e.message));
+    loadDb();
   }, []);
 
   const records = useMemo(
@@ -219,7 +221,13 @@ export default function RenewalDatabase() {
         </div>
       </div>
 
-      {selected && <RecordDrawer record={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <RecordDrawer
+          record={selected}
+          onClose={() => setSelected(null)}
+          onDeleted={() => { setSelected(null); loadDb(); }}
+        />
+      )}
     </>
   );
 }
@@ -234,8 +242,30 @@ function Fact({ k, v }) {
   );
 }
 
-function RecordDrawer({ record: r, onClose }) {
+function RecordDrawer({ record: r, onClose, onDeleted }) {
   const chips = [r.product, r.state && r.state !== "—" ? r.state : null, r.source_label].filter(Boolean);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+
+  const handleDelete = async () => {
+    if (!window.confirm(
+      `Permanently delete this ${r.renewed ? "Renewed" : "Termed"} record for "${r.group_name}" ` +
+      `(${fmtDate(r.eff_date)}) from the Renewal Database?\n\n` +
+      "This is real training data, not a forecast row — the model already learned from it, so " +
+      "deleting it only affects the NEXT retrain, and it stays gone across future data refreshes. " +
+      "Reversible by an admin later via data/excluded_history.csv."
+    )) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.deleteHistoryRecord(r.group_name, r.eff_date);
+      onDeleted?.();
+    } catch (err) {
+      setDeleteError(err.message);
+      setDeleting(false);
+    }
+  };
+
   return (
     <>
       <div className="drawer-overlay" onClick={onClose} />
@@ -250,6 +280,10 @@ function RecordDrawer({ record: r, onClose }) {
             <span className="chip chip-outcome">{r.renewed ? "Renewed" : "Termed"}</span>
             {chips.map((c) => <span className="chip" key={c}>{c}</span>)}
           </div>
+          <button className="drawer-delete" onClick={handleDelete} disabled={deleting} title="Permanently delete this record from the Renewal Database">
+            <Trash2 size={12} /> {deleting ? "Deleting…" : "Delete record"}
+          </button>
+          {deleteError && <div className="drawer-delete-error">{deleteError}</div>}
         </div>
 
         <div className="drawer-section-title">Identity &amp; outcome</div>

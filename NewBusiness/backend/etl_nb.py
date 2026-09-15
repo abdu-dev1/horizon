@@ -324,6 +324,24 @@ def _row_keys(frame: pd.DataFrame) -> pd.Series:
             + pd.to_datetime(frame["created_date"], errors="coerce").dt.strftime("%Y-%m-%d").fillna(""))
 
 
+def _apply_exclusions(df: pd.DataFrame, excl_path: Path, label: str) -> pd.DataFrame:
+    """Drop any row whose (group_name, created_date) is in excl_path -- a
+    manual deletion made in the app (see app/nb_mode.delete_quote and
+    delete_history_record). Same identity as _row_keys, since that's exactly
+    what a user deleted by."""
+    if not excl_path.exists():
+        return df
+    excl = pd.read_csv(excl_path)
+    if excl.empty:
+        return df
+    excl_keys = set(_row_keys(excl))
+    mask = _row_keys(df).isin(excl_keys)
+    if mask.any():
+        print(f"  MANUAL EXCLUSIONS: {int(mask.sum())} row(s) removed from {label} "
+              f"per {excl_path.name}")
+    return df[~mask].reset_index(drop=True)
+
+
 LOCAL_SOURCES = ("manual_transfer", "auto_expired")
 
 
@@ -643,6 +661,16 @@ def build(extra_upload: tuple[str, bytes] | None = None, write: bool = True) -> 
         if before != len(pipeline):
             print(f"  removed {before - len(pipeline)} row(s) from the open pipeline "
                   f"— already decided in-app (kept in history, not double-counted)")
+
+    # Manual exclusions: a row a user explicitly deleted in the app (Open
+    # Pipeline / Win/Loss Database — see app/nb_mode.delete_quote and
+    # delete_history_record). Applied here, opposite direction from the local-
+    # decisions preservation above but the same reasoning: a full rebuild has
+    # no way to know a row was deleted, so without this the very next rebuild
+    # would silently resurrect it from the raw export. Reversible by hand —
+    # delete its row from the exclusion file and rerun.
+    history = _apply_exclusions(history, DATA / "nb_excluded_history.csv", "Win/Loss Database")
+    pipeline = _apply_exclusions(pipeline, DATA / "nb_excluded_groups.csv", "Open Pipeline")
 
     # Belt-and-suspenders: force every date column to a real Timestamp right
     # before writing, whatever dtype it arrived in. A single non-Timestamp

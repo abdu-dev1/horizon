@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Database, Percent, Search, Target } from "lucide-react";
+import { Database, Percent, Search, Target, Trash2 } from "lucide-react";
 import { apiNb } from "../../apiNb.js";
 import { fmtNum, fmtPct } from "../../format.js";
 import { KpiCard } from "../../components/shared.jsx";
@@ -23,10 +23,33 @@ export default function NbDatabase() {
   const [sortKey, setSortKey] = useState("eff_date");
   const [sortDir, setSortDir] = useState(-1);
   const [page, setPage] = useState(0);
+  const [deletingKey, setDeletingKey] = useState(null);
+
+  const loadDb = () => apiNb.history().then(setDb).catch((e) => setErr(e.message));
 
   useEffect(() => {
-    apiNb.history().then(setDb).catch((e) => setErr(e.message));
+    loadDb();
   }, []);
+
+  const handleDelete = async (r) => {
+    if (!window.confirm(
+      `Permanently delete this ${r.won ? "Won" : "Lost"} record for "${r.group_name}" from the ` +
+      "Win/Loss Database?\n\n" +
+      "This is real training data, not an open quote — the model already learned from it, so " +
+      "deleting it only affects the NEXT retrain, and it stays gone across future data refreshes. " +
+      "Reversible by an admin later via data/nb_excluded_history.csv."
+    )) return;
+    const rowKey = `${r.group_name}||${r.created_date}`;
+    setDeletingKey(rowKey);
+    try {
+      await apiNb.deleteHistoryRecord(r.group_name, r.created_date);
+      await loadDb();
+    } catch (err) {
+      alert(`Couldn't delete: ${err.message}`);
+    } finally {
+      setDeletingKey(null);
+    }
+  };
 
   const records = db?.records ?? [];
   const winRate = records.length ? records.filter((r) => r.won).length / records.length : null;
@@ -118,6 +141,7 @@ export default function NbDatabase() {
                     {c.label}{sortKey === c.key ? (sortDir === 1 ? " ↑" : " ↓") : ""}
                   </th>
                 ))}
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -135,6 +159,17 @@ export default function NbDatabase() {
                     );
                     return <td key={c.key}>{renderCell(r, c)}</td>;
                   })}
+                  <td>
+                    <button
+                      className="btn btn-ghost"
+                      style={{ padding: "4px 8px" }}
+                      title="Permanently delete this record from the Win/Loss Database"
+                      disabled={deletingKey === `${r.group_name}||${r.created_date}`}
+                      onClick={() => handleDelete(r)}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, X } from "lucide-react";
+import { Search, Trash2, X } from "lucide-react";
 import { apiNb } from "../../apiNb.js";
 import { NB_BAND_COLORS, fmtMoney, fmtNum, fmtPct } from "../../format.js";
 import { ProbCell, LikelihoodBadge } from "../../components/shared.jsx";
@@ -206,7 +206,18 @@ export default function NbPipeline({ data, onDataChange, onNotify }) {
         </div>
       </div>
 
-      {selected && <QuoteDrawer group={selected} total={data.groups.length} onClose={() => setSelected(null)} />}
+      {selected && (
+        <QuoteDrawer
+          group={selected}
+          total={data.groups.length}
+          onClose={() => setSelected(null)}
+          onDeleted={async () => {
+            setSelected(null);
+            await onDataChange?.();
+            onNotify?.(`${selected.group_name} removed from the Open Pipeline.`);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -235,14 +246,33 @@ function RadialGauge({ p, color, caption }) {
   );
 }
 
-export function QuoteDrawer({ group, total, onClose }) {
+export function QuoteDrawer({ group, total, onClose, onDeleted }) {
   const color = NB_BAND_COLORS[group.likelihood_band] || "#94a3b8";
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
   const chips = [
     group.product,
     group.billing_state,
     group.stage,
   ].filter(Boolean);
+
+  const handleDelete = async () => {
+    if (!window.confirm(
+      `Remove "${group.group_name}" from the Open Pipeline?\n\n` +
+      "This only removes this one quote — it won't create a Win/Loss Database entry, since it " +
+      "never reached a real decision, and can be undone by an admin later."
+    )) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await apiNb.deleteQuote(group.quote_id);
+      await onDeleted?.();
+    } catch (err) {
+      setDeleteError(err.message);
+      setDeleting(false);
+    }
+  };
 
   return (
     <>
@@ -257,6 +287,10 @@ export function QuoteDrawer({ group, total, onClose }) {
           <div className="drawer-chips">
             {chips.map((c) => <span className="chip" key={c}>{c}</span>)}
           </div>
+          <button className="drawer-delete" onClick={handleDelete} disabled={deleting} title="Remove this quote from the Open Pipeline">
+            <Trash2 size={12} /> {deleting ? "Removing…" : "Delete quote"}
+          </button>
+          {deleteError && <div className="drawer-delete-error">{deleteError}</div>}
         </div>
 
         <div className="drawer-hero">

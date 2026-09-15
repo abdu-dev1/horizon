@@ -1890,6 +1890,27 @@ def main():
             history = pd.concat([history, prev_manual[keep]], ignore_index=True)
             print(f"preserved {len(prev_manual)} manually-transferred group(s) from prior real_history.csv")
 
+    # Manual exclusions (data/excluded_history.csv): a historical decision a user
+    # explicitly removed from the Renewal Database via the app — entered in error,
+    # a stale duplicate, a screenshot mis-transcribed. Same shape as the manual-
+    # transfer preservation above but the opposite direction, and needed for the
+    # same reason: a full ETL rebuild has no way to know a row was deleted, so
+    # without this the very next rebuild would silently resurrect it from the raw
+    # export. Reversible by hand — delete its row from excluded_history.csv and
+    # rerun. NEVER applied to anything else (real_active_book.csv, the forward
+    # book) — this only ever removes a PAST decision, on purpose.
+    excl_path = OUT.parent / "excluded_history.csv"
+    if excl_path.exists():
+        excl = pd.read_csv(excl_path, parse_dates=["eff_date"])
+        if len(excl):
+            excl_keys = set(zip(excl["group_name"].map(key), excl["eff_date"]))
+            hist_keys = list(zip(history["group_name"].map(key), history["eff_date"]))
+            mask = pd.Series(hist_keys, index=history.index).isin(excl_keys)
+            if mask.any():
+                print(f"MANUAL EXCLUSIONS: {int(mask.sum())} historical record(s) "
+                      f"removed per data/excluded_history.csv")
+            history = history[~mask].reset_index(drop=True)
+
     # consistent boolean representation across the file: 1 / 0 / blank
     for c in ("renewed", "bor_change", "captive_offer",
               "tenure_is_derived", "carrier_changed", "am_changed", "broker_preferred",

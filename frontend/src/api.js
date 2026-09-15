@@ -62,6 +62,18 @@ export const api = {
     if (!res.ok) throw new Error(json?.detail || `delete group -> ${res.status}`);
     return json;
   },
+  // Removes a PAST decision from the Renewal Database, not a forward-book
+  // row -- see the matching note on backend/app/main.py's endpoint.
+  deleteHistoryRecord: async (group_name, eff_date) => {
+    const res = await fetch(`${BASE}/api/renewal-database/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_name, eff_date }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(json?.detail || `delete history record -> ${res.status}`);
+    return json;
+  },
   updateUnderwriting: async (group_id, fields) => {
     const res = await fetch(`${BASE}/api/groups/${group_id}/underwriting`, {
       method: "POST",

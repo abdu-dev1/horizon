@@ -6,8 +6,10 @@ NewBusiness/backend/models, never from the renewal project.
 """
 from __future__ import annotations
 
+import csv
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
@@ -127,6 +129,82 @@ def update_stage(quote_id: str, new_stage: str) -> dict:
     import build_book
     build_book.build()
     return {"moved_to_history": decided}
+
+
+def _excl_writer(path: Path, id_cols: tuple[str, str]) -> None:
+    if not path.exists():
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerow([*id_cols, "note", "excluded_at"])
+
+
+def delete_quote(quote_id: str) -> dict:
+    """Permanently remove one open quote — entered in error, a duplicate, a
+    sandbox row the dummy-name filter in etl_nb.py missed. Unlike update_stage
+    above, this never creates a history row: the quote never reached a real
+    decision, so there's nothing to record.
+
+    Edits nb_pipeline.csv directly, same idx-based lookup as update_stage
+    (see its docstring), and persists to data/nb_excluded_groups.csv (keyed
+    by group_name + created_date, the same identity etl_nb._row_keys uses)
+    so a future etl_nb.py rebuild — which reconstructs nb_pipeline.csv from
+    the raw export — doesn't bring it back. Same reasoning as
+    etl_nb._preserve_local_decisions for stage edits, opposite direction.
+    """
+    if not quote_id.startswith("NB"):
+        raise ValueError(f"bad quote id {quote_id!r}")
+    idx = int(quote_id[2:])
+
+    pipeline = pd.read_csv(PIPELINE_PATH)
+    if idx not in pipeline.index:
+        raise KeyError(f"quote {quote_id} not found in the open pipeline "
+                        f"(it may have already been moved or removed)")
+    row = pipeline.loc[idx]
+    group_name, created_date = row["group_name"], row["created_date"]
+
+    pipeline = pipeline.drop(index=idx).reset_index(drop=True)
+    pipeline.to_csv(PIPELINE_PATH, index=False)
+
+    excl_path = DATA / "nb_excluded_groups.csv"
+    _excl_writer(excl_path, ("group_name", "created_date"))
+    with open(excl_path, "a", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow([group_name, created_date, "removed via Open Pipeline",
+                                 datetime.now(timezone.utc).isoformat(timespec="seconds")])
+
+    import build_book
+    build_book.build()
+    return {"group_name": group_name}
+
+
+def delete_history_record(group_name: str, created_date: str) -> dict:
+    """Permanently remove ONE decided quote from the Win/Loss Database —
+    entered in error, a stale duplicate. Heavier than delete_quote above:
+    this is real training data, not a forward-looking forecast row.
+
+    Two things happen: nb_history.csv is edited directly, right now (this
+    process cannot rerun etl_nb.py's raw-workbook ETL — see the note above
+    /api/retrain used to be), AND persisted to data/nb_excluded_history.csv
+    so a future etl_nb.py rebuild doesn't bring it back. Does NOT retrain —
+    same rule as every other data-import path in this app.
+    """
+    history = pd.read_csv(HISTORY_PATH)
+    mask = ((history["group_name"].astype(str).str.strip().str.lower()
+             == group_name.strip().lower())
+            & (pd.to_datetime(history["created_date"], errors="coerce")
+               == pd.to_datetime(created_date, errors="coerce")))
+    if not mask.any():
+        raise KeyError(f"No matching Win/Loss Database record for "
+                        f"{group_name!r} @ {created_date}")
+    removed_count = int(mask.sum())
+    history = history[~mask].reset_index(drop=True)
+    history.to_csv(HISTORY_PATH, index=False)
+
+    excl_path = DATA / "nb_excluded_history.csv"
+    _excl_writer(excl_path, ("group_name", "created_date"))
+    with open(excl_path, "a", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow([group_name, created_date, "removed via Win/Loss Database",
+                                 datetime.now(timezone.utc).isoformat(timespec="seconds")])
+
+    return {"group_name": group_name, "removed_count": removed_count}
 
 
 def auto_expire_lost() -> int:

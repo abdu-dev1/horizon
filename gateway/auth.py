@@ -124,17 +124,26 @@ ADMIN_PREFIXES: tuple[str, ...] = (
     "/api/data-quality",
     "/nb-app/api/data-quality",
 
-    # Model Maintenance: retraining and the data-upload workflow.
+    # Model Maintenance / Model Performance: retraining and the raw-export
+    # upload workflow (both products -- the NB one (/nb-app/api/upload/...)
+    # was missing here when it first shipped; caught while adding the delete
+    # endpoints below, which needed the same review).
     "/api/retrain",
     "/nb-app/api/retrain",
     "/api/upload/",
     "/api/upload",
+    "/nb-app/api/upload/",
 )
 
 # Destructive or bulk-mutating operations that are not on an admin-only page
 # but should not be available to every signed-in user either.
 ADMIN_EXACT: frozenset[str] = frozenset({
     "/api/groups/move-decided-to-database",
+    # Deleting a HISTORICAL decision (real training data), not a forward-book
+    # row -- heavier than delete_group below, so it's admin-only even though
+    # it isn't DELETE-method / doesn't live under /api/groups/.
+    "/api/renewal-database/delete",
+    "/nb-app/api/history/delete",
 })
 
 
@@ -143,8 +152,9 @@ def requires_admin(path: str, method: str) -> bool:
         return True
     if any(path.startswith(p) for p in ADMIN_PREFIXES):
         return True
-    # Deleting a renewal group is destructive; reading one is not.
-    if method == "DELETE" and path.startswith("/api/groups/"):
+    # Deleting a group/quote from either product's forward-looking book is
+    # destructive; reading one is not.
+    if method == "DELETE" and (path.startswith("/api/groups/") or path.startswith("/nb-app/api/groups/")):
         return True
     return False
 

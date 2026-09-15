@@ -44,6 +44,24 @@ export const apiNb = {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `update stage -> ${res.status}`);
     return res.json();
   },
+  deleteQuote: async (quote_id) => {
+    const res = await fetch(`${BASE}/api/groups/${quote_id}`, { method: "DELETE" });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(json?.detail || `delete quote -> ${res.status}`);
+    return json;
+  },
+  // Removes a PAST decision from the Win/Loss Database, not an open quote --
+  // see the matching note on NewBusiness/backend/app/main.py's endpoint.
+  deleteHistoryRecord: async (group_name, created_date) => {
+    const res = await fetch(`${BASE}/api/history/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group_name, created_date }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(json?.detail || `delete history record -> ${res.status}`);
+    return json;
+  },
   // See the matching note in api.js: in-app retraining is gone, replaced by
   // installing a bundle built and reviewed on an admin's laptop.
   adminStatus: () => get("/api/admin/status"),

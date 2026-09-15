@@ -125,11 +125,41 @@ def update_stage(quote_id: str, body: dict):
     return {"status": "updated", **result}
 
 
+@app.delete("/api/groups/{quote_id}")
+def delete_quote(quote_id: str):
+    """Remove ONE open quote — entered in error, a duplicate, a sandbox row
+    the dummy-name filter missed. See nb_mode.delete_quote."""
+    try:
+        result = nb_mode.delete_quote(quote_id)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    STATE["nb"] = nb_mode.build_state()
+    return {"status": "deleted", **result}
+
+
 @app.get("/api/history")
 def history():
     """Every decided quote (Closed Won/Lost), row-level — the New Business
     equivalent of the renewal project's Renewal Database page."""
     return {"records": nb_mode.history_records()}
+
+
+@app.post("/api/history/delete")
+def delete_history(body: dict):
+    """Remove ONE decided quote from the Win/Loss Database — see
+    nb_mode.delete_history_record for why this is heavier than delete_quote
+    above (it's real training data) and admin-gated separately at the gateway."""
+    group_name = (body.get("group_name") or "").strip()
+    created_date = body.get("created_date")
+    if not group_name or not created_date:
+        raise HTTPException(400, "body must include 'group_name' and 'created_date'")
+    try:
+        result = nb_mode.delete_history_record(group_name, created_date)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    return {"status": "deleted", **result}
 
 
 @app.get("/api/performance")

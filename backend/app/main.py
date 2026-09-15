@@ -280,6 +280,57 @@ def delete_group(group_id: str):
     return {"status": "deleted", "group_name": g["group_name"], "renewal_date": g["renewal_date"]}
 
 
+@app.post("/api/renewal-database/delete")
+def delete_history_record(body: dict):
+    """Remove ONE historical decision from the Renewal Database — entered in
+    error, a stale duplicate, a screenshot mis-transcribed. Distinct from
+    delete_group above: that one only ever hides a row from the FORWARD book
+    and never touches real_history.csv; this is the one place a past decision
+    itself can be removed, so it's a heavier action (it's real training data).
+
+    Two things happen: real_history.csv is edited directly, right now (this
+    process cannot rerun the raw-workbook ETL — see the note above where
+    /api/retrain used to be, same reason), AND the deletion is persisted to
+    data/excluded_history.csv so the next full etl_real.py rebuild — which
+    reconstructs real_history.csv from the raw exports — doesn't silently
+    bring it back. Does NOT retrain: the live model already learned from this
+    row; removing it only takes effect on the next explicit retrain, same as
+    every other data-import path in this app.
+    """
+    group_name = (body.get("group_name") or "").strip()
+    eff_date = body.get("eff_date")
+    if not group_name or not eff_date:
+        raise HTTPException(400, "body must include 'group_name' and 'eff_date'")
+
+    path = BACKEND_DIR / "data" / "real_history.csv"
+    df = pd.read_csv(path, parse_dates=["eff_date"])
+    target_date = pd.to_datetime(eff_date, errors="coerce")
+    mask = ((df["group_name"].astype(str).str.strip().str.lower() == group_name.lower())
+            & (df["eff_date"] == target_date))
+    if not mask.any():
+        raise HTTPException(404, f"No matching Renewal Database record for "
+                                  f"{group_name!r} @ {eff_date}")
+    removed_count = int(mask.sum())
+    df = df[~mask]
+    df.to_csv(path, index=False)
+
+    excl_path = BACKEND_DIR / "data" / "excluded_history.csv"
+    new_file = not excl_path.exists()
+    with open(excl_path, "a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        if new_file:
+            w.writerow(["group_name", "eff_date", "note", "excluded_at"])
+        w.writerow([group_name, target_date.date().isoformat(), "removed via Renewal Database",
+                    datetime.now(timezone.utc).isoformat(timespec="seconds")])
+
+    import build_book
+    build_book.build()
+    STATE["real"] = real_mode.build_state()
+    _clear_rec_cache()
+    return {"status": "deleted", "group_name": group_name, "eff_date": target_date.date().isoformat(),
+            "removed_count": removed_count}
+
+
 _BLANK_TEXT = {None, "", "—", "Unknown"}
 
 
