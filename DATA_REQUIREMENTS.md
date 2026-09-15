@@ -1,7 +1,6 @@
 # Horizon — Data Requirements
 
 **Renewal Forecasting model · HPS Level-Funded & Self-Funded**
-Prepared for: Liz Moser & Becca Amrani · Owner: Abdumalik Dalerzoda
 
 ---
 
