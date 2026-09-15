@@ -30,6 +30,7 @@ import ModelLab from "./pages/ModelLab.jsx";
 import DataQuality from "./pages/DataQuality.jsx";
 import ModelMaintenance from "./pages/ModelMaintenance.jsx";
 import PublishPanel from "./components/PublishPanel.jsx";
+import ScorecardUploadPanel from "./components/ScorecardUploadPanel.jsx";
 import NbOverview from "./pages/nb/NbOverview.jsx";
 import NbEntityPage from "./pages/nb/NbEntityPage.jsx";
 import NbPipeline from "./pages/nb/NbPipeline.jsx";
@@ -167,6 +168,19 @@ export default function App() {
     if (product === "renewals") setData(await loadAll(isAdmin));
     else await refreshNb();
     setToast(`Published model ${result.version ?? ""}`.trim());
+    setTimeout(() => setToast(null), 6000);
+  };
+
+  // Called after a scorecard/pricing upload is applied (ScorecardUploadPanel):
+  // the served state has already been rebuilt server-side, so this just
+  // re-reads it and reports what changed.
+  const handleScorecardApplied = async (result) => {
+    await refreshNb();
+    setToast(
+      result.history_rows != null
+        ? `Win/Loss Database: ${result.history_rows} rows. Open Pipeline: ${result.pipeline_rows} rows.`
+        : `Saved ${result.saved_as ?? "file"}.`
+    );
     setTimeout(() => setToast(null), 6000);
   };
 
@@ -398,6 +412,7 @@ export default function App() {
           {product === "newbusiness" && nbData && !nbFocus && pageId === "model" && (
             <div style={{ display: "grid", gap: 18 }}>
               <PublishPanel client={apiNb} product="newbusiness" onApplied={handlePublished} />
+              <ScorecardUploadPanel onApplied={handleScorecardApplied} />
               <NbModel data={nbData} onDataChange={refreshNb} />
             </div>
           )}

@@ -16,6 +16,7 @@ from __future__ import annotations
 import shutil
 import sys
 import tempfile
+import uuid
 import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -29,6 +30,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
 from app import bundle, data_quality_nb, nb_mode  # noqa: E402
+import etl_nb  # noqa: E402  (the raw-export ETL -- see /api/upload/scorecard/* below)
 
 
 @contextmanager
@@ -229,6 +231,59 @@ def admin_reload():
     """
     STATE["nb"] = nb_mode.build_state()
     return {"status": "reloaded", "model_version": _cur()["model_version"]}
+
+
+# ---------------------------------------------------------------------------
+# Raw-export upload: drop in an RSD Scorecard Export (or External Market
+# Pricing workbook) from the dashboard instead of copying it into NewBusiness/
+# by hand and running etl_nb.py yourself. Preview/apply, same two-step shape
+# as the bundle endpoints above and the renewal project's upload feed, for the
+# same reason: an admin sees exactly what would change -- new decided
+# outcomes, new open quotes, any row-count red flag -- before it touches the
+# Win/Loss Database or the Open Pipeline. This does NOT retrain or rescore;
+# apply runs build_book.py to rescore the pipeline with the CURRENT model,
+# same as every other data-import path in this app (see the note above where
+# /api/retrain used to be).
+# ---------------------------------------------------------------------------
+
+@app.post("/api/upload/scorecard/preview")
+async def upload_scorecard_preview(file: UploadFile = File(...)):
+    raw_bytes = await file.read()
+    try:
+        kind = etl_nb.detect_export_kind(raw_bytes)
+    except Exception as e:
+        raise HTTPException(400, f"Couldn't read that as an Excel workbook: {e}")
+    if kind is None:
+        raise HTTPException(
+            400,
+            "Doesn't look like an RSD Scorecard Export or an External Market Pricing "
+            f"file -- expected a sheet named '{etl_nb.SHEET}' or '{etl_nb.PRICING_SHEET}' "
+            "(checked by sheet name, not filename, so a renamed export still works).",
+        )
+    report = etl_nb.preview_upload(raw_bytes, kind, file.filename)
+    token = uuid.uuid4().hex
+    STATE.setdefault("_pending_uploads", {})[token] = {
+        "raw": raw_bytes, "kind": kind, "filename": file.filename,
+    }
+    return {"token": token, "kind": kind, "filename": file.filename, **report}
+
+
+@app.post("/api/upload/scorecard/apply")
+def upload_scorecard_apply(body: dict):
+    """Commit a previously-previewed upload (see .../preview) -- saves the
+    file into NewBusiness/ (it becomes just another export from then on,
+    like one dropped in by hand) and reruns the ETL for real."""
+    token = body.get("token")
+    pending = STATE.get("_pending_uploads", {}).pop(token, None)
+    if pending is None:
+        raise HTTPException(404, "No matching preview -- upload again (previews expire "
+                                  "once applied or after a server restart).")
+    result = etl_nb.apply_upload(pending["raw"], pending["kind"], pending["filename"])
+
+    import build_book
+    build_book.build()
+    STATE["nb"] = nb_mode.build_state()
+    return {"status": "applied", **result}
 
 
 # Serve the built frontend when present (standalone dev only — the combined

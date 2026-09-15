@@ -54,6 +54,22 @@ export const apiNb = {
     if (!res.ok) throw new Error(`reload -> ${res.status}`);
     return res.json();
   },
+  // Drop in a raw RSD Scorecard Export (or External Market Pricing workbook)
+  // instead of copying it into NewBusiness/ by hand and running etl_nb.py
+  // yourself. Preview reports what would change; apply commits it and
+  // rescores the pipeline. Neither retrains -- see the matching note on
+  // /api/retrain in the backend.
+  scorecardPreview: (file) => postFile("/api/upload/scorecard/preview", file),
+  scorecardApply: async (token) => {
+    const res = await fetch(`${BASE}/api/upload/scorecard/apply`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) throw new Error(json?.detail ?? `apply -> ${res.status}`);
+    return json;
+  },
 };
 
 export async function loadAllNb(isAdmin = false) {

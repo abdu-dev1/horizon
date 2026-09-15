@@ -19,11 +19,14 @@ Run:  python etl_nb.py   (from NewBusiness/backend/)
 """
 from __future__ import annotations
 
+import io
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+import openpyxl
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -80,6 +83,32 @@ def _find_sources() -> list[Path]:
             "(the workbook itself is never bundled into the exe)."
         )
     return files
+
+
+def detect_export_kind(raw_bytes: bytes) -> str | None:
+    """Classify an uploaded workbook by its SHEET NAMES, not its filename.
+
+    The RSD Scorecard Export always ships with a sheet literally named
+    SHEET regardless of what the file itself gets renamed to -- Salesforce's
+    own auto-generated name, a manual "- September" rename, a timestamp
+    suffix, whatever. Several files already sitting in NewBusiness/ prove
+    the point: same sheet, three different filename shapes. Detecting by
+    sheet name instead of a filename prefix means the in-app upload doesn't
+    care what the file is called, only what it actually is.
+
+    Returns "scorecard", "pricing", or None if neither expected sheet is
+    present (i.e. this isn't a file this project reads at all).
+    """
+    wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=True)
+    try:
+        names = set(wb.sheetnames)
+    finally:
+        wb.close()
+    if SHEET in names:
+        return "scorecard"
+    if PRICING_SHEET in names:
+        return "pricing"
+    return None
 
 
 # The identity of an opportunity ACROSS exports. Deliberately the same subset
@@ -207,7 +236,14 @@ def _load_market_pricing() -> pd.DataFrame | None:
     path = _find_pricing_source()
     if path is None:
         return None
-    raw = pd.read_excel(path, sheet_name=PRICING_SHEET, header=0)
+    return _load_market_pricing_from(path)
+
+
+def _load_market_pricing_from(source) -> pd.DataFrame | None:
+    """The actual parse, factored out of _load_market_pricing() so the
+    in-app upload preview can run it against uploaded bytes (an io.BytesIO)
+    before the file has been saved anywhere -- same logic either way."""
+    raw = pd.read_excel(source, sheet_name=PRICING_SHEET, header=0)
     raw = raw[raw["Sales Type"] == "New Business"].copy()
     if raw.empty:
         return None
@@ -278,6 +314,16 @@ def _days(later: pd.Series, earlier: pd.Series) -> pd.Series:
     return d.where(d >= 0)  # a negative gap is a data-entry error, not a real lead time
 
 
+def _row_keys(frame: pd.DataFrame) -> pd.Series:
+    """An opportunity's identity in the OUTPUT frames (nb_history.csv /
+    nb_pipeline.csv), as opposed to MERGE_KEY's identity in the raw export.
+    Shared by _preserve_local_decisions (matching a local edit back to its
+    opportunity) and the upload-preview diff report (deciding whether a row
+    is new)."""
+    return (frame["group_name"].astype(str).str.strip() + "||"
+            + pd.to_datetime(frame["created_date"], errors="coerce").dt.strftime("%Y-%m-%d").fillna(""))
+
+
 LOCAL_SOURCES = ("manual_transfer", "auto_expired")
 
 
@@ -310,25 +356,21 @@ def _preserve_local_decisions(history: pd.DataFrame) -> tuple[pd.DataFrame, set[
     """
     path = DATA / "nb_history.csv"
     if not path.exists():
-        return history
+        return history, set()
 
     prev = pd.read_csv(path)
     if prev.empty:
         return history, set()
 
-    def _keys(frame: pd.DataFrame) -> pd.Series:
-        return (frame["group_name"].astype(str).str.strip() + "||"
-                + pd.to_datetime(frame["created_date"], errors="coerce").dt.strftime("%Y-%m-%d").fillna(""))
-
     if "source" in prev.columns:
         local = prev[prev["source"].isin(LOCAL_SOURCES)].copy()
     else:
-        local = prev[~_keys(prev).isin(set(_keys(history)))].copy()
+        local = prev[~_row_keys(prev).isin(set(_row_keys(history)))].copy()
         local["source"] = "manual_transfer"   # can't tell which mechanism, retroactively
     if local.empty:
         return history, set()
 
-    local = local[~_keys(local).isin(set(_keys(history)))]
+    local = local[~_row_keys(local).isin(set(_row_keys(history)))]
     if local.empty:
         print("  preserved local decisions: 0 (export has caught up on all of them)")
         return history, set()
@@ -355,16 +397,37 @@ def _preserve_local_decisions(history: pd.DataFrame) -> tuple[pd.DataFrame, set[
             local[col] = pd.to_datetime(local[col], errors="coerce")
     merged = pd.concat([history, local], ignore_index=True)
     print(f"  preserved local decisions: {len(local)} row(s) recorded in-app, not in the export")
-    return merged, set(_keys(local))
+    return merged, set(_row_keys(local))
 
 
-def build() -> tuple[pd.DataFrame, pd.DataFrame]:
+def build(extra_upload: tuple[str, bytes] | None = None, write: bool = True) -> dict:
+    """Run the whole ETL: merge every export in ROOT, oldest first, into
+    history + pipeline.
+
+    extra_upload -- (label, raw .xlsx bytes) for a file that ISN'T on disk
+    yet, folded into the merge as the newest source (in-memory, via
+    io.BytesIO — never touches ROOT). This is what powers the in-app upload
+    preview: a candidate file can be merged and reported on without saving
+    it or committing anything, exactly the same code path a file dropped
+    into the folder by hand would take. See app/main.py's
+    /api/upload/scorecard/preview.
+
+    write=False skips the CSV write (and the print of what got written) --
+    also for preview, so a rejected upload can never have touched
+    nb_history.csv / nb_pipeline.csv.
+    """
     paths_in = _find_sources()
-    print(f"merging {len(paths_in)} export(s) from {ROOT}:")
-    raw = _merge_exports([
-        (p.name, _normalize_export(pd.read_excel(p, sheet_name=SHEET, header=0)))
-        for p in paths_in
-    ])
+    sources = [(p.name, _normalize_export(pd.read_excel(p, sheet_name=SHEET, header=0)))
+               for p in paths_in]
+    source_names = [p.name for p in paths_in]
+    if extra_upload is not None:
+        label, raw_bytes = extra_upload
+        sources.append((label, _normalize_export(
+            pd.read_excel(io.BytesIO(raw_bytes), sheet_name=SHEET, header=0))))
+        source_names.append(label)
+    print(f"merging {len(sources)} export(s) from {ROOT}"
+          + (" (+ 1 pending upload, not yet saved)" if extra_upload else "") + ":")
+    raw = _merge_exports(sources)
 
     c_name = _col(raw, "Opportunity Name")
     c_rsd = _col(raw, "Primary Owner")
@@ -594,17 +657,99 @@ def build() -> tuple[pd.DataFrame, pd.DataFrame]:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors="coerce")
 
-    DATA.mkdir(parents=True, exist_ok=True)
-    history.to_csv(DATA / "nb_history.csv", index=False)
-    pipeline.to_csv(DATA / "nb_pipeline.csv", index=False)
+    if write:
+        DATA.mkdir(parents=True, exist_ok=True)
+        history.to_csv(DATA / "nb_history.csv", index=False)
+        pipeline.to_csv(DATA / "nb_pipeline.csv", index=False)
 
-    print(f"sources: {', '.join(p.name for p in paths_in)}")
+    print(f"sources: {', '.join(source_names)}")
     print(f"New Business rows: {len(raw)}")
     print(f"  decided (history): {len(history)}  (won {int(history['sold'].sum())} / "
           f"lost {int((history['sold'] == 0).sum())})")
     print(f"  open (pipeline):   {len(pipeline)}")
     print(f"win rate (decided only): {history['sold'].mean():.1%}")
-    return history, pipeline
+    return {"history": history, "pipeline": pipeline, "sources": source_names, "raw_rows": len(raw)}
+
+
+# ---------------------------------------------------------------------------
+# In-app upload: preview a candidate file before it touches disk, then apply
+# it for real. See app/main.py's /api/upload/scorecard/preview and /apply.
+#
+# Why a preview step at all, given the merge logic above already only ever
+# adds/corrects rows and can't delete history: a narrower export can still
+# silently mean "many fewer NEW rows than expected" (the September RSD pull
+# arriving pre-filtered to Effective Date >= 2026-01-01 is exactly this,
+# see DEPLOYMENT_PLAN.md) -- nothing about the merge being non-destructive
+# catches that on its own. Showing the numbers before they go live is the
+# same discipline the CLI flow already relies on a human reading the printed
+# output for; this just surfaces it in the UI instead of a terminal.
+# ---------------------------------------------------------------------------
+
+def _read_csv_or_empty(path: Path, like: pd.DataFrame) -> pd.DataFrame:
+    return pd.read_csv(path) if path.exists() else pd.DataFrame(columns=like.columns)
+
+
+def _diff_report(new_history: pd.DataFrame, new_pipeline: pd.DataFrame) -> dict:
+    """Compare a candidate history/pipeline pair against what's currently on
+    disk (i.e. currently served) and summarize what would change."""
+    old_history = _read_csv_or_empty(DATA / "nb_history.csv", new_history)
+    old_pipeline = _read_csv_or_empty(DATA / "nb_pipeline.csv", new_pipeline)
+
+    old_h_keys = set(_row_keys(old_history)) if not old_history.empty else set()
+    old_p_keys = set(_row_keys(old_pipeline)) if not old_pipeline.empty else set()
+    new_h_keys = _row_keys(new_history)
+    new_p_keys = _row_keys(new_pipeline)
+
+    total_before = len(old_history) + len(old_pipeline)
+    total_after = len(new_history) + len(new_pipeline)
+
+    warning = None
+    if total_before and total_after < total_before * 0.9:
+        warning = (f"Row count would drop from {total_before:,} to {total_after:,} "
+                   f"({total_before - total_after:,} fewer) -- that looks like a filtered "
+                   "or partial export, not a smaller book. Check the source file before applying.")
+
+    return {
+        "new_decided_outcomes": int((~new_h_keys.isin(old_h_keys)).sum()),
+        "new_open_quotes": int((~new_p_keys.isin(old_p_keys)).sum()),
+        "total_history_before": len(old_history), "total_history_after": len(new_history),
+        "total_pipeline_before": len(old_pipeline), "total_pipeline_after": len(new_pipeline),
+        "warning": warning,
+    }
+
+
+def preview_upload(raw_bytes: bytes, kind: str, filename: str) -> dict:
+    """What WOULD happen if `filename` were saved and the ETL rerun --
+    computed without writing anything, so a bad file can be safely rejected."""
+    if kind == "scorecard":
+        result = build(extra_upload=(filename, raw_bytes), write=False)
+        report = _diff_report(result["history"], result["pipeline"])
+        report["sources"] = result["sources"]
+        return report
+    if kind == "pricing":
+        mp = _load_market_pricing_from(io.BytesIO(raw_bytes))
+        return {"opportunities_priced": 0 if mp is None else len(mp)}
+    raise ValueError(f"unknown upload kind {kind!r}")
+
+
+def apply_upload(raw_bytes: bytes, kind: str, filename: str) -> dict:
+    """Save `filename` into ROOT (so it's just another export from now on,
+    same as one dropped in by hand) and rerun the ETL for real. Does NOT
+    retrain or rescore -- app/main.py's apply endpoint runs build_book.py
+    right after this, same as every other data-import path in this app."""
+    ROOT.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d %H%M%S")
+    prefix = "RSD Scorecard Export" if kind == "scorecard" else "External Market Pricing_All Time"
+    dest = ROOT / f"{prefix} - uploaded {stamp}.xlsx"
+    dest.write_bytes(raw_bytes)
+
+    if kind == "scorecard":
+        result = build(write=True)
+        return {"saved_as": dest.name, "sources": result["sources"],
+                "history_rows": len(result["history"]), "pipeline_rows": len(result["pipeline"])}
+    if kind == "pricing":
+        return {"saved_as": dest.name}
+    raise ValueError(f"unknown upload kind {kind!r}")
 
 
 if __name__ == "__main__":
