@@ -3,7 +3,7 @@ import { Search, Trash2, X } from "lucide-react";
 import { apiNb } from "../../apiNb.js";
 import { NB_BAND_COLORS, fmtMoney, fmtNum, fmtPct } from "../../format.js";
 import { ProbCell, LikelihoodBadge } from "../../components/shared.jsx";
-import { NB_COLUMNS as COLUMNS, dash, renderNbCell as renderCell } from "./nbColumns.jsx";
+import { NB_COLUMNS as COLUMNS, dash, renderNbCell as renderCell, yesno } from "./nbColumns.jsx";
 
 const BAND_RANK = { High: 0, Moderate: 1, Low: 2, "Very Low": 3 };
 const PAGE_SIZE = 25;
