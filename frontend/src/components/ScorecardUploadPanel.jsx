@@ -129,6 +129,7 @@ export default function ScorecardUploadPanel({ onApplied }) {
             <div style={{ display: "grid", gap: 5, fontSize: 13 }}>
               <Row label="New decided outcomes (Win/Loss Database)" value={`+${preview.new_decided_outcomes}`} />
               <Row label="New open quotes (Open Pipeline)" value={`+${preview.new_open_quotes}`} />
+              <Row label="Left the pipeline (now decided)" value={`−${preview.pipeline_departures}`} />
               <Row label="Win/Loss Database" value={`${preview.total_history_before} → ${preview.total_history_after}`} />
               <Row label="Open Pipeline" value={`${preview.total_pipeline_before} → ${preview.total_pipeline_after}`} />
             </div>

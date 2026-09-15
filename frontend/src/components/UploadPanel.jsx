@@ -101,6 +101,7 @@ export function UploadPanel({ onImported }) {
           <b>{FEED_LABEL[r.feed] || r.feed}:</b> imported — {r.rows_added} added, {r.rows_updated} updated
           {r.feed === "outcomes" ? " into the training data (retrain to learn from them)"
                                   : " into Upcoming Renewals"}.
+          {r.rows_restored > 0 && ` (${r.rows_restored} of these had been deleted before — re-uploading them undid that.)`}
         </div>
       ))}
 
@@ -113,6 +114,7 @@ export function UploadPanel({ onImported }) {
 
 function UploadPreview({ report, onCommit }) {
   const hasErrors = report.errors?.length > 0;
+  const pending = report.rows_pending || 0;
   return (
     <div className={`upload-preview ${hasErrors ? "upload-preview-bad" : ""}`}>
       <div className="upload-preview-head">
@@ -120,6 +122,14 @@ function UploadPreview({ report, onCommit }) {
         {report.rows_in_file} row(s) ready
         {report.rows_skipped > 0 && `, ${report.rows_skipped} skipped`}
       </div>
+
+      {pending > 0 && (
+        <div className="upload-pending-note">
+          {pending} group{pending === 1 ? "" : "s"} still {pending === 1 ? "doesn't" : "don't"} have
+          a decision yet — that's expected on a pre-filled sheet, not a problem. Nothing to fix;
+          they're just skipped until someone types "Renewed" or "Termed" next to them.
+        </div>
+      )}
 
       {hasErrors && (
         <ul className="upload-issue-list upload-issue-errors">

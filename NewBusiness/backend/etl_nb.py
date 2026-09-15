@@ -85,28 +85,43 @@ def _find_sources() -> list[Path]:
     return files
 
 
+def _match_sheet(names: list[str], expected: str) -> str | None:
+    """Find the sheet that IS `expected`, tolerating the ways a person (or
+    Salesforce) ends up renaming the tab: exact (case-insensitive) match wins
+    outright; otherwise any sheet whose name merely CONTAINS `expected` --
+    'RSD Scorecard Export - Amy', 'RSD Scorecard Export (2)', 'Amy's RSD
+    Scorecard Export' all count. Ambiguous (more than one contains-match)
+    is treated as no match rather than guessing which one."""
+    exact = [n for n in names if n.strip().lower() == expected.lower()]
+    if exact:
+        return exact[0]
+    hits = [n for n in names if expected.lower() in n.lower()]
+    return hits[0] if len(hits) == 1 else None
+
+
 def detect_export_kind(raw_bytes: bytes) -> str | None:
     """Classify an uploaded workbook by its SHEET NAMES, not its filename.
 
-    The RSD Scorecard Export always ships with a sheet literally named
-    SHEET regardless of what the file itself gets renamed to -- Salesforce's
-    own auto-generated name, a manual "- September" rename, a timestamp
-    suffix, whatever. Several files already sitting in NewBusiness/ prove
-    the point: same sheet, three different filename shapes. Detecting by
-    sheet name instead of a filename prefix means the in-app upload doesn't
-    care what the file is called, only what it actually is.
+    The RSD Scorecard Export always ships with a sheet named SHEET (or close
+    to it -- see _match_sheet) regardless of what the file itself gets
+    renamed to -- Salesforce's own auto-generated name, a manual "- September"
+    rename, a timestamp suffix, whatever. Several files already sitting in
+    NewBusiness/ prove the point: same sheet, three different filename
+    shapes. Detecting by sheet name instead of a filename prefix means the
+    in-app upload doesn't care what the file is called, only what it
+    actually is.
 
     Returns "scorecard", "pricing", or None if neither expected sheet is
     present (i.e. this isn't a file this project reads at all).
     """
     wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), read_only=True)
     try:
-        names = set(wb.sheetnames)
+        names = list(wb.sheetnames)
     finally:
         wb.close()
-    if SHEET in names:
+    if _match_sheet(names, SHEET):
         return "scorecard"
-    if PRICING_SHEET in names:
+    if _match_sheet(names, PRICING_SHEET):
         return "pricing"
     return None
 
@@ -243,7 +258,22 @@ def _load_market_pricing_from(source) -> pd.DataFrame | None:
     """The actual parse, factored out of _load_market_pricing() so the
     in-app upload preview can run it against uploaded bytes (an io.BytesIO)
     before the file has been saved anywhere -- same logic either way."""
-    raw = pd.read_excel(source, sheet_name=PRICING_SHEET, header=0)
+    if hasattr(source, "seek"):
+        source.seek(0)
+    wb = openpyxl.load_workbook(source, read_only=True)
+    try:
+        actual_name = _match_sheet(list(wb.sheetnames), PRICING_SHEET)
+    finally:
+        wb.close()
+    if actual_name is None:
+        raise ValueError(
+            f"No sheet matching '{PRICING_SHEET}' found in this workbook -- "
+            f"consider renaming the sheet tab to '{PRICING_SHEET}' (or "
+            "something that contains it) and re-uploading."
+        )
+    if hasattr(source, "seek"):
+        source.seek(0)
+    raw = pd.read_excel(source, sheet_name=actual_name, header=0)
     raw = raw[raw["Sales Type"] == "New Business"].copy()
     if raw.empty:
         return None
@@ -270,6 +300,54 @@ def _load_market_pricing_from(source) -> pd.DataFrame | None:
     if mp.empty:
         return None
     return mp.groupby("k").min().reset_index()
+
+
+def _read_export_sheet(source, expected_name: str) -> pd.DataFrame:
+    """Read the sheet matching `expected_name` from `source` (a Path or a
+    BytesIO) -- via _match_sheet, so a tab renamed to 'RSD Scorecard Export -
+    Amy' or similar is still found -- locating the header row instead of
+    assuming it's row 0.
+
+    Salesforce's own export dialog has an option to include the report's
+    title/filter-criteria block above the data -- when it's on, that pushes
+    the real header row down by a dozen-plus rows. read_excel(header=0) would
+    then treat that blank title row as the header, every _col() lookup
+    afterward comes up empty, and the upload fails with a confusing
+    KeyError. Scanning for the row that actually names the columns makes the
+    read robust to whichever way the export was generated.
+    """
+    if hasattr(source, "seek"):
+        source.seek(0)
+    wb = openpyxl.load_workbook(source, read_only=True)
+    try:
+        actual_name = _match_sheet(list(wb.sheetnames), expected_name)
+    finally:
+        wb.close()
+    if actual_name is None:
+        raise ValueError(
+            f"No sheet matching '{expected_name}' found in this workbook -- "
+            f"consider renaming the sheet tab to '{expected_name}' (or "
+            "something that contains it) and re-uploading."
+        )
+
+    if hasattr(source, "seek"):
+        source.seek(0)
+    preview = pd.read_excel(source, sheet_name=actual_name, header=None, nrows=40)
+    header_row = None
+    for i, row in preview.iterrows():
+        cells = {str(v).strip().lower() for v in row if pd.notna(v)}
+        if "opportunity name" in cells and "sales type" in cells:
+            header_row = i
+            break
+    if header_row is None:
+        raise ValueError(
+            f"Couldn't find the header row in the '{actual_name}' sheet -- "
+            "expected a row with both 'Opportunity Name' and 'Sales Type' "
+            "somewhere in the first 40 rows."
+        )
+    if hasattr(source, "seek"):
+        source.seek(0)
+    return pd.read_excel(source, sheet_name=actual_name, header=header_row)
 
 
 def _col(df: pd.DataFrame, *needles: str) -> str:
@@ -435,13 +513,13 @@ def build(extra_upload: tuple[str, bytes] | None = None, write: bool = True) -> 
     nb_history.csv / nb_pipeline.csv.
     """
     paths_in = _find_sources()
-    sources = [(p.name, _normalize_export(pd.read_excel(p, sheet_name=SHEET, header=0)))
+    sources = [(p.name, _normalize_export(_read_export_sheet(p, SHEET)))
                for p in paths_in]
     source_names = [p.name for p in paths_in]
     if extra_upload is not None:
         label, raw_bytes = extra_upload
         sources.append((label, _normalize_export(
-            pd.read_excel(io.BytesIO(raw_bytes), sheet_name=SHEET, header=0))))
+            _read_export_sheet(io.BytesIO(raw_bytes), SHEET))))
         source_names.append(label)
     print(f"merging {len(sources)} export(s) from {ROOT}"
           + (" (+ 1 pending upload, not yet saved)" if extra_upload else "") + ":")
@@ -737,9 +815,18 @@ def _diff_report(new_history: pd.DataFrame, new_pipeline: pd.DataFrame) -> dict:
                    f"({total_before - total_after:,} fewer) -- that looks like a filtered "
                    "or partial export, not a smaller book. Check the source file before applying.")
 
+    # Quotes that were open before and aren't anymore -- almost always because
+    # this same file finally decided them (see new_decided_outcomes), so they
+    # moved out of the pipeline and into history instead of just disappearing.
+    # Surfaced separately because new_open_quotes is a gross add count: it
+    # doesn't net against these departures, so total_pipeline_after can land
+    # much closer to total_pipeline_before than new_open_quotes alone implies.
+    pipeline_departures = int(len(old_p_keys - set(new_p_keys)))
+
     return {
         "new_decided_outcomes": int((~new_h_keys.isin(old_h_keys)).sum()),
         "new_open_quotes": int((~new_p_keys.isin(old_p_keys)).sum()),
+        "pipeline_departures": pipeline_departures,
         "total_history_before": len(old_history), "total_history_after": len(new_history),
         "total_pipeline_before": len(old_pipeline), "total_pipeline_after": len(new_pipeline),
         "warning": warning,

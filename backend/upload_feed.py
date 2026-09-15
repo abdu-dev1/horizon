@@ -336,13 +336,14 @@ def _parse_sheet(sheet: str, df: pd.DataFrame, filename: str, feed: str) -> dict
             "outcomes feed instead, or remove the column.")
     if errors:
         return {"ok": False, "feed": feed, "filename": filename, "sheet": sheet,
-                "rows_in_file": int(len(df)), "rows_ready": 0,
+                "rows_in_file": int(len(df)), "rows_ready": 0, "rows_pending": 0,
                 "matched_columns": matched, "unrecognized_columns": unknown,
                 "errors": errors, "warnings": warnings, "sample": []}
 
     out_cols = CANONICAL + (["renewed"] if feed == "outcomes" else [])
     rows: list[dict] = []
     skipped = 0
+    pending = 0
     coercion_notes: dict[str, int] = {}
 
     for i, src in df.iterrows():
@@ -405,11 +406,23 @@ def _parse_sheet(sheet: str, df: pd.DataFrame, filename: str, feed: str) -> dict
                 row[canon] = n
 
         if feed == "outcomes":
-            o = _coerce_outcome(src.get(matched["outcome"]))
+            raw_outcome = src.get(matched["outcome"])
+            blank_outcome = (raw_outcome is None
+                             or (not isinstance(raw_outcome, str) and pd.isna(raw_outcome))
+                             or str(raw_outcome).strip() == "")
+            o = _coerce_outcome(raw_outcome)
             if o is None:
-                errors.append(f'Row {line} ("{name}"): outcome '
-                              f'"{src.get(matched["outcome"])}" is not Renewed or Termed.')
-                skipped += 1
+                if blank_outcome:
+                    # Not a mistake -- this is exactly what a pre-filled Past
+                    # Outcomes sheet looks like before anyone's typed a
+                    # decision in yet (see build_template's prefill_outcomes).
+                    # Counted separately from real errors so the UI doesn't
+                    # paint 149 unremarkable "still open" rows as red X's.
+                    pending += 1
+                else:
+                    errors.append(f'Row {line} ("{name}"): outcome '
+                                  f'"{raw_outcome}" is not Renewed or Termed.')
+                    skipped += 1
                 continue
             row["renewed"] = o
 
@@ -442,6 +455,7 @@ def _parse_sheet(sheet: str, df: pd.DataFrame, filename: str, feed: str) -> dict
         "rows_in_file": int(len(df)),
         "rows_ready": int(len(frame)),
         "rows_skipped": skipped,
+        "rows_pending": pending,
         "matched_columns": matched,
         "unrecognized_columns": unknown,
         "missing_optional": [f for c, f, *_ in FIELDS if c not in matched],
@@ -484,6 +498,40 @@ def _archive(raw: bytes, filename: str, feed: str) -> str:
     return dest.name
 
 
+def _restore_from_exclusions(frame: pd.DataFrame, excl_name: str) -> int:
+    """Undo a previous manual delete for any row in `frame` that matches one --
+    keyed the same way build_book.py's / etl_real.py's exclusion filters match
+    (see there): _deal_norm(group_name) + the renewal's cycle month, not the
+    exact date.
+
+    A file upload is a deliberate, explicit action -- if someone re-uploads a
+    group by name, that's at least as strong a signal of intent as the
+    original delete was. Without this, a re-uploaded row gets silently
+    filtered back out by build_book.py/etl_real.py on the very next rebuild
+    (the delete is permanent by design, to survive an automated re-pull), so
+    it looks like the upload "didn't add up" with no indication why -- the fix
+    is to treat an explicit re-upload as an implicit undo of that delete,
+    rather than requiring someone to know to hand-edit the exclusion file."""
+    excl_path = DATA / excl_name
+    if not excl_path.exists() or frame.empty:
+        return 0
+    excl = pd.read_csv(excl_path)
+    if excl.empty:
+        return 0
+    from app.real_mode import _deal_norm
+    excl_key = pd.Series(list(zip(
+        excl["group_name"].map(_deal_norm),
+        pd.to_datetime(excl["eff_date"], errors="coerce").dt.to_period("M"))))
+    frame_key = set(zip(
+        frame["group_name"].map(_deal_norm),
+        pd.to_datetime(frame["eff_date"], errors="coerce").dt.to_period("M")))
+    mask = excl_key.isin(frame_key)
+    if not mask.any():
+        return 0
+    excl[~mask.to_numpy()].to_csv(excl_path, index=False)
+    return int(mask.sum())
+
+
 def commit(report: dict, raw: bytes | None = None) -> dict:
     """Write a parsed feed into the pipeline's own files. Does NOT rescore - the
     caller runs build_book/retrain, same as every other ETL path."""
@@ -494,17 +542,22 @@ def commit(report: dict, raw: bytes | None = None) -> dict:
     archived = _archive(raw, report.get("filename", ""), feed) if raw else None
 
     if feed == "upcoming":
+        restored = _restore_from_exclusions(frame, "excluded_groups.csv")
         # A full file upload always fully replaces a matching row (merge=False) -
         # see _commit_upcoming's docstring. Only the Needs Data single-field edit
         # (app/main.py) uses merge=True, calling _commit_upcoming directly.
         added, updated = _commit_upcoming(frame)
         target = UPLOADED_UPCOMING.name
     else:
+        restored = _restore_from_exclusions(frame, "excluded_history.csv")
         added, updated = _commit_outcomes(frame)
         target = HISTORY.name
 
-    return {"status": "imported", "feed": feed, "target": target,
-            "rows_added": added, "rows_updated": updated, "archived_as": archived}
+    result = {"status": "imported", "feed": feed, "target": target,
+              "rows_added": added, "rows_updated": updated, "archived_as": archived}
+    if restored:
+        result["rows_restored"] = restored
+    return result
 
 
 def _commit_upcoming(frame: pd.DataFrame, merge: bool = False) -> tuple[int, int]:

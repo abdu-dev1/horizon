@@ -287,10 +287,19 @@ async def upload_scorecard_preview(file: UploadFile = File(...)):
         raise HTTPException(
             400,
             "Doesn't look like an RSD Scorecard Export or an External Market Pricing "
-            f"file -- expected a sheet named '{etl_nb.SHEET}' or '{etl_nb.PRICING_SHEET}' "
-            "(checked by sheet name, not filename, so a renamed export still works).",
+            f"file -- expected a sheet tab named '{etl_nb.SHEET}' or '{etl_nb.PRICING_SHEET}' "
+            "(or a tab name that at least contains one of those -- this checks the sheet "
+            "tab inside the workbook, not the filename, so a renamed file still works). "
+            "Consider renaming the sheet tab to match and re-uploading.",
         )
-    report = etl_nb.preview_upload(raw_bytes, kind, file.filename)
+    try:
+        report = etl_nb.preview_upload(raw_bytes, kind, file.filename)
+    except Exception as e:
+        raise HTTPException(
+            400,
+            f"Couldn't read that file as {kind}: {e} -- consider renaming the sheet tab "
+            "so it clearly matches the expected report and re-uploading.",
+        )
     token = uuid.uuid4().hex
     STATE.setdefault("_pending_uploads", {})[token] = {
         "raw": raw_bytes, "kind": kind, "filename": file.filename,

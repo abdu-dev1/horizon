@@ -1381,6 +1381,7 @@ select.filter,
 .upload-issue-errors li { color: var(--red); }
 .upload-issue-warnings li { color: var(--amber); }
 .upload-unrecognized { margin: 6px 0; font-size: 10.5px; color: var(--text-faint); }
+.upload-pending-note { margin: 6px 0; padding: 6px 8px; border-radius: 6px; background: var(--bg-soft, rgba(148, 163, 184, 0.12)); font-size: 11px; color: var(--text-faint); }
 .upload-sample { margin-top: 8px; max-height: 220px; }
 .upload-preview-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .upload-modal { max-width: 620px; }
