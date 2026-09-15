@@ -420,6 +420,29 @@ def _apply_exclusions(df: pd.DataFrame, excl_path: Path, label: str) -> pd.DataF
     return df[~mask].reset_index(drop=True)
 
 
+def _restore_from_exclusions(keys: set[str], excl_path: Path) -> int:
+    """Undo a previous manual delete (app/nb_mode.delete_quote /
+    delete_history_record) for any excluded row whose identity is in `keys` --
+    the opportunities in a file someone just uploaded.
+
+    A file upload is a deliberate, explicit action -- if someone re-uploads an
+    opportunity by name, that's at least as strong a signal of intent as the
+    original delete was. Without this, a re-uploaded row that matches an old
+    exclusion gets silently filtered right back out by _apply_exclusions on
+    this very build, with no indication why (see the renewal project's
+    upload_feed._restore_from_exclusions, same fix, same reasoning)."""
+    if not excl_path.exists() or not keys:
+        return 0
+    excl = pd.read_csv(excl_path)
+    if excl.empty:
+        return 0
+    mask = _row_keys(excl).isin(keys)
+    if not mask.any():
+        return 0
+    excl[~mask].to_csv(excl_path, index=False)
+    return int(mask.sum())
+
+
 LOCAL_SOURCES = ("manual_transfer", "auto_expired")
 
 
@@ -859,9 +882,25 @@ def apply_upload(raw_bytes: bytes, kind: str, filename: str) -> dict:
     dest.write_bytes(raw_bytes)
 
     if kind == "scorecard":
+        # Give any opportunity in THIS file a chance to undo a prior manual
+        # delete before the rebuild's _apply_exclusions would otherwise
+        # silently filter it right back out -- see _restore_from_exclusions.
+        norm = _normalize_export(_read_export_sheet(io.BytesIO(raw_bytes), SHEET))
+        c_name = _col(norm, "Opportunity Name")
+        c_created = _col(norm, "Created Date")
+        upload_keys = set(_row_keys(pd.DataFrame({
+            "group_name": norm[c_name].astype(str).str.strip(),
+            "created_date": pd.to_datetime(norm[c_created], errors="coerce"),
+        })))
+        restored = (_restore_from_exclusions(upload_keys, DATA / "nb_excluded_groups.csv")
+                    + _restore_from_exclusions(upload_keys, DATA / "nb_excluded_history.csv"))
+
         result = build(write=True)
-        return {"saved_as": dest.name, "sources": result["sources"],
-                "history_rows": len(result["history"]), "pipeline_rows": len(result["pipeline"])}
+        out = {"saved_as": dest.name, "sources": result["sources"],
+               "history_rows": len(result["history"]), "pipeline_rows": len(result["pipeline"])}
+        if restored:
+            out["rows_restored"] = restored
+        return out
     if kind == "pricing":
         return {"saved_as": dest.name}
     raise ValueError(f"unknown upload kind {kind!r}")

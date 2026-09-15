@@ -99,6 +99,9 @@ export default function ScorecardUploadPanel({ onApplied }) {
           {applied.history_rows != null && (
             <> Win/Loss Database: {applied.history_rows} rows. Open Pipeline: {applied.pipeline_rows} rows.</>
           )}
+          {applied.rows_restored > 0 && (
+            <> {applied.rows_restored} of these had been deleted before — re-uploading them undid that.</>
+          )}
         </div>
       )}
 
