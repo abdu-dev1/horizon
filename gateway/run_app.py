@@ -1,8 +1,8 @@
 """
 Horizon launcher — starts BOTH backends + the gateway and blocks in the
 foreground. This is the single entrypoint for the whole product: it is what
-you run locally (`python run_app.py`) and what the container runs as its
-CMD. Closing it stops everything.
+you run locally (`python run_app.py`) and what Azure App Service runs as its
+startup command. Closing it stops everything.
 
 Configuration (all optional; defaults are the local-dev setup):
 

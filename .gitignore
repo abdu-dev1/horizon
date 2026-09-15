@@ -62,17 +62,10 @@ venv/
 #    build step and no Node on the server. Rebuild with `npm run build` in
 #    frontend/ and commit the result whenever the UI changes.
 !frontend/dist/**
-#    Infrastructure-as-code and deployment scripts (infra/)
-!**/*.bicep
-!**/*.ps1
-!**/*.bicepparam
-#    Container build
-!Dockerfile
 #    Dependency manifests and docs
 !**/requirements.txt
 !**/*.md
 !.gitignore
-!.dockerignore
 
 # 5. Backstop: hard-deny every data/binary format, last word over step 4.
 #    Nothing in the allowlist above legitimately uses these extensions,

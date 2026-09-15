@@ -1,7 +1,11 @@
 # Horizon — Operations Runbook
 
-Day-to-day operation of the deployed app. Architecture and reasoning live in
-[DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md).
+Day-to-day operation of the app once it's deployed to Azure. Architecture and
+reasoning live in [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md) — check its status
+line first: as of this writing that deploy hasn't happened yet (Phase 6 is
+unbuilt), so the Azure-specific sections below (Access, `az webapp` commands,
+Deploying code) describe the target setup, not a live system. The monthly
+refresh and packaging steps are accurate today regardless of hosting.
 
 ---
 
@@ -143,34 +147,17 @@ az webapp restart  -g <rg> -n horizon-app
 
 ---
 
-## Building the image
+## Deploying code
 
-Don't build locally. `infra/deploy.ps1` uses `az acr build`, which builds in
-Azure using no local disk at all.
+There is no Docker image to build. Azure App Service's own builder (Oryx)
+installs the root `requirements.txt` and runs `gateway/run_app.py` directly —
+see [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md)'s Phase 2 note for why an earlier
+custom-image approach was dropped (a local `docker build` here filled this
+dev machine's disk to zero). Phase 6 of that plan — the infrastructure that
+would make an actual deploy possible — hasn't been written or run yet, so
+there is no redeploy command to give here. Once it exists, this section
+should hold it.
 
-A local `docker build` peaks around **6-8 GB** — two base images, the
-scikit-learn/scipy/pandas install, `node_modules`, the ~1.5 GB result, and
-BuildKit keeping every intermediate layer. Attempting one on a machine with
-~2 GB free filled the disk to zero and left Docker Desktop unable to start
-(it could not even prune its own cache to recover). If you do want a local
-build, have **10 GB+ free** first.
-
-Recovering a Docker Desktop wedged by a full disk:
-
-```powershell
-wsl --shutdown
-Remove-Item "$env:LOCALAPPDATA\Docker\wsl\disk\docker_data.vhdx" -Force
-# restart Docker Desktop; it recreates the disk empty, losing all local images
-```
-
----
-
-## Redeploying code
-
-```powershell
-./infra/deploy.ps1 -ResourceGroup <rg> -EntraClientId <guid> `
-                   -EntraClientSecret <secret> -AdminEmails "you@crumdalespecialty.com"
-```
-
-Idempotent: re-provisions infrastructure (no-op if unchanged), builds and
-pushes a new image tag, restarts the site. Data on the shares is untouched.
+In the meantime, the standalone `Horizon.zip` build (`package_all.py`) is the
+distribution path that already works, with no Azure dependency at all — see
+that script's docstring for what it produces and how to send it.

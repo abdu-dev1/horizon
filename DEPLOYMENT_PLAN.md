@@ -1,19 +1,27 @@
 # Horizon — Azure Deployment Plan
 
-Status as of 2026-09-08: **phases 1-5 built and verified locally. Phase 6
-written but NOT executed** (no Azure CLI or Docker on the dev machine, so the
-image has never been built and no Azure resources exist). Phase 7 documented in
-[RUNBOOK.md](RUNBOOK.md); its verification steps run against a deployed URL and
-are therefore still outstanding.
+Status as of 2026-09-14: **phases 1-5 built and verified locally. Phase 2's
+original approach — a custom Docker image built via `az acr build` — was
+dropped in favor of a direct Oryx deploy**: App Service's own builder installs
+the root `requirements.txt` and runs `gateway/run_app.py` directly, so there
+is no image to build at all (see the note under Phase 2). **Phase 6 needs to
+be rewritten for that approach and has not been executed** (still no Azure
+CLI on the dev machine either, so no Azure resources exist). Phase 7 is
+documented in [RUNBOOK.md](RUNBOOK.md); its verification steps run against a
+deployed URL and are therefore still outstanding.
+
+In the meantime, `package_all.py` builds a separate, already-working
+distribution path that has no Azure dependency at all: a standalone Windows
+build (`Horizon.zip`) a recipient runs locally. See that script's docstring.
 
 | Phase | State |
 |---|---|
 | 1 Strip the desktop path | done -- 1,808 lines removed |
-| 2 Containerize | code done; image built by `az acr build` on first deploy, **not locally** (see note) |
+| 2 Deploy path | pivoted from Docker/ACR to a direct Oryx build off the root `requirements.txt` -- no image to validate |
 | 3 Auth + authorization | done, verified against a running app |
 | 4 Role split | done, verified |
 | 5 Publish/bundle pipeline | done, round trip verified incl. edit preservation |
-| 6 Azure infrastructure | `infra/main.bicep` + `infra/deploy.ps1` written, **unvalidated** |
+| 6 Azure infrastructure | not started for the Oryx approach -- the Docker-era `infra/main.bicep` + `infra/deploy.ps1` were removed and nothing has replaced them |
 | 7 Verify on the real URL | outstanding -- needs phase 6 |
 
 Target: the combined Horizon app (Renewals + New Business) running on Azure App
@@ -26,8 +34,9 @@ that is built on an admin's laptop — never in the cloud.
 
 | Decision | Choice | Why |
 |---|---|---|
-| Hosting | One Linux container, all 3 processes | Mirrors dev exactly; the two backends both ship a package named `app` and can never share a process |
-| Docker | Yes | Three processes from one entrypoint, and `scikit-learn` must be pinned to **1.3.2** or the pickled model breaks |
+| Hosting | One Linux App Service, all 3 processes | Mirrors dev exactly; the two backends both ship a package named `app` and can never share a process |
+| Custom Docker image | No -- dropped | A local `docker build` fills this dev machine's disk to zero (see Phase 2); Oryx needs no image at all, just `requirements.txt` |
+| Dependency pins | Exact versions, not floors, in `requirements.txt` | `scikit-learn` must match **1.3.2** or the pickled models break -- see the comment at the top of that file |
 | Auth | Entra ID SSO via App Service Easy Auth | Platform-level, no auth code in FastAPI |
 | Admin role | Hardcoded email allowlist (app setting) | Chosen for simplicity; migrate to an Entra group later if it drifts |
 | Writable state | Azure Files mount, single instance | Keeps every existing CSV write working with zero code change |
@@ -92,32 +101,45 @@ Do this first: everything afterwards gets simpler.
   dispatch; keep the `HORIZON_PORT` env override).
 - **Gate:** app still starts and all pages load locally after this.
 
+*(Note: every file this bullet removed was later reintroduced, unchanged in
+purpose but rewritten, for the standalone-exe packaging path described under
+"Known accepted trade-offs" below — that path did not exist yet when this
+phase ran, and is unrelated to the desktop `.exe` mode being stripped here.)*
+
 Also delete (confirm first — they look like stale session artifacts):
 `ALL_PHASES_COMPLETE.md`, `FINAL_FIX_SUMMARY.md`, `IMPLEMENTATION_SUMMARY.md`.
 
 **Keep** `walk_forward.py`, `experiment.py`, `experiment_nb.py` — these are the
 honest-evaluation gate and get *more* important once retraining is offline.
 
-## Phase 2 — Config + containerize
+## Phase 2 — Config + deploy path
 
 - Pin all three `requirements.txt` exactly: `scikit-learn==1.3.2`, `numpy==1.26.2`,
   `pandas==2.1.3`, `scipy==1.16.3`, `joblib==1.3.2`, `fastapi==0.104.1`,
-  plus `uvicorn`, `openpyxl`, `httpx`, `python-multipart`.
+  plus `uvicorn`, `openpyxl`, `httpx`, `python-multipart`. Union them into the
+  root `requirements.txt` -- the one file Oryx (App Service's Python builder)
+  reads, since it only looks at the repo root and this app has three
+  requirement sets (see the comment at the top of that file).
 - Env-var config to replace hardcoded values:
   `gateway/main.py:31-32` (`RENEWAL_BASE`/`NB_BASE`), bind `0.0.0.0` not `127.0.0.1`.
-- `Dockerfile`: node stage builds `frontend/dist` → `python:3.12-slim` runtime,
-  installs all three requirement sets, entrypoint launches all three processes.
-- `.dockerignore` (mirror the `.gitignore` allowlist logic).
-- Add `GET /healthz` on the gateway for Azure's probe.
-- **Gate:** ~~`docker run` locally~~ -- **dropped deliberately.** The image is
-  built by `az acr build` server-side during deploy, so a local build is only
-  ever a pre-check, and this machine cannot afford one: a build peaks around
-  6-8 GB (two base images, the sklearn/scipy/pandas install, node_modules, the
-  ~1.5 GB result, plus BuildKit caching every intermediate layer) against ~2 GB
-  free. An attempt on 2026-09-08 filled the disk to 0 bytes and wedged Docker
-  Desktop, which then could not start to prune its own cache. The Dockerfile is
-  therefore validated on the first ACR build instead -- expect to iterate there
-  rather than assuming it is correct.
+- Add `GET /healthz` on the gateway for Azure's probe; exclude it from Easy
+  Auth or the probe fails and Azure restarts the app in a loop.
+- **Dropped deliberately: a custom Docker image.** The original plan built one
+  via `az acr build` server-side (a local `docker build` here was never an
+  option -- see below), but committing the built `frontend/dist` and letting
+  Oryx install `requirements.txt` directly needs no image, no registry, and no
+  build step of any kind, so the whole failure mode below goes away rather
+  than just moving server-side.
+- **Gate:** the app starts under a plain `python gateway/run_app.py` with only
+  the root `requirements.txt` installed -- the same thing Oryx does.
+
+*Why not build the old Docker image locally, even as a pre-check:* it peaks
+around 6-8 GB (two base images, the sklearn/scipy/pandas install,
+`node_modules`, the ~1.5 GB result, plus BuildKit caching every intermediate
+layer) against ~2 GB free on this machine. An attempt on 2026-09-08 filled the
+disk to 0 bytes and wedged Docker Desktop, which then could not start to prune
+its own cache. That machine constraint is what pushed this phase toward a
+build mechanism that needs no image at all.
 
 ## Phase 3 — Security
 
@@ -161,13 +183,21 @@ Then:
 
 ## Phase 6 — Azure infrastructure
 
-- Resource group; Azure Container Registry; App Service Plan **B2 or P1v3**
+**Not started.** The Bicep template and `deploy.ps1` written for the
+Docker/ACR approach were removed along with the Dockerfile (they provisioned
+a container registry and pointed the App Service at an image, neither of
+which the Oryx approach needs), and nothing has replaced them yet. Still
+needed, once someone picks this back up:
+
+- Resource group; App Service Plan **B2 or P1v3**, Linux, Python runtime
   (the NB model alone is 148 MB resident — not a free/shared tier).
-- App Service (Linux container), **scale pinned to 1 instance** (the CSV writes
-  are not concurrency-safe).
+- App Service, **scale pinned to 1 instance** (the CSV writes are not
+  concurrency-safe).
 - Azure Files share mounted at the delta-store path; Blob container for bundles.
-- App settings: env vars from Phase 2 + `HORIZON_ADMIN_EMAILS` + storage
-  connection (via Key Vault reference, not a literal).
+- App settings: env vars from Phase 2 + `HORIZON_AUTH_MODE=easyauth` +
+  `HORIZON_ADMIN_EMAILS` + storage connection (via Key Vault reference, not a
+  literal).
+- Easy Auth (Entra ID) enabled on the App Service, `/healthz` excluded from it.
 - **Gate:** deployed URL serves both dashboards through the gateway.
 
 ## Phase 7 — Verify + document
@@ -179,8 +209,9 @@ Verify on the deployed URL, not locally:
 - served model version + AUC match the published `MANIFEST.json`
 - container restart time (this is the outage window — single instance, no redundancy)
 
-Then write a monthly runbook: drop new workbooks → run the 6 scripts → review AUC →
-`publish.py` → click Reload in the Admin view.
+The monthly operating procedure this implies — drop new workbooks → run the 6
+scripts → review AUC → `publish.py` → click Reload in the Admin view — is
+already written up in [RUNBOOK.md](RUNBOOK.md).
 
 ---
 
@@ -191,5 +222,7 @@ Then write a monthly runbook: drop new workbooks → run the 6 scripts → revie
 - **Retrain requires the admin's laptop** + the raw workbooks. Deliberate, per above.
 - **Admin allowlist is a second place to maintain** and will drift when someone
   leaves; an Entra group is the upgrade path.
-- **The three `.spec` files contain absolute local paths** (`C:\Users\...`) and are
-  already pushed to GitHub. Moot once Phase 1 deletes them.
+- **The three `.spec` files** drive the separate PyInstaller packaging path
+  (`package_all.py`, added after this plan's Phase 1); they resolve every
+  path off PyInstaller's own `SPECPATH` rather than a hardcoded machine path,
+  so they build unmodified for whoever runs them next.

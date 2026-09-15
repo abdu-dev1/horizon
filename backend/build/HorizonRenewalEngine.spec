@@ -24,9 +24,17 @@
 # else's machine with no dev environment to debug it in.
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import collect_all
+import os
+
+# SPECPATH (this file's own directory, i.e. backend/build) is injected by
+# PyInstaller into the spec's globals -- used here instead of an absolute
+# path so this builds on any machine/username, not just the one it was
+# authored on.
+REPO_ROOT = os.path.abspath(os.path.join(SPECPATH, '..', '..'))
+BACKEND_DIR = os.path.abspath(os.path.join(SPECPATH, '..'))
 
 datas = [
-    ('C:/Users/AbdumalikDalerzoda/Desktop/ForecastEngine/frontend/dist', 'frontend_dist'),
+    (os.path.join(REPO_ROOT, 'frontend', 'dist'), 'frontend_dist'),
     # Hand-curated rsd/am name aliases. Shipped SEPARATELY from seed_bundle.zip
     # because it is a bundle DELTA file (app/bundle.py DELTA_FILES) -- a bundle
     # may never carry one, and apply() refuses a bundle that does. But a fresh
@@ -35,10 +43,9 @@ datas = [
     # ('Scott' / 'Scott B' / 'Scott Brendamour' as three people). run_app.py's
     # _ensure_seeded() copies these in only when absent, so a recipient's own
     # edits are never overwritten.
-    ('C:/Users/AbdumalikDalerzoda/Desktop/ForecastEngine/backend/data/people_aliases.csv', 'seed_delta'),
+    (os.path.join(BACKEND_DIR, 'data', 'people_aliases.csv'), 'seed_delta'),
 ]
-seed_zip = 'C:/Users/AbdumalikDalerzoda/Desktop/ForecastEngine/backend/build/embed_seed/seed_bundle.zip'
-import os
+seed_zip = os.path.join(SPECPATH, 'embed_seed', 'seed_bundle.zip')
 if os.path.exists(seed_zip):
     datas.append((seed_zip, '.'))
 
@@ -83,5 +90,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Users\\AbdumalikDalerzoda\\Desktop\\ForecastEngine\\icon.ico'],
+    icon=[os.path.join(REPO_ROOT, 'icon.ico')],
 )

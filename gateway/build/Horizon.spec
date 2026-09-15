@@ -34,6 +34,13 @@
 # (gateway/auth.py) -- PyInstaller's static analysis should already trace
 # both, but a silent gap here would mean the ONE exe a recipient actually
 # runs fails outright, so both are listed anyway.
+import os
+
+# SPECPATH (this file's own directory) is injected by PyInstaller into the
+# spec's globals -- used here instead of an absolute path so this builds on
+# any machine/username, not just the one it was authored on.
+REPO_ROOT = os.path.abspath(os.path.join(SPECPATH, '..', '..'))
+
 hiddenimports = ['main', 'auth']
 
 datas = [
@@ -75,5 +82,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Users\\AbdumalikDalerzoda\\Desktop\\ForecastEngine\\icon.ico'],
+    icon=[os.path.join(REPO_ROOT, 'icon.ico')],
 )

@@ -205,3 +205,14 @@ forwarding):
 Both products additionally expose `/api/admin/...` (and `/nb-app/api/admin/...`) endpoints
 for bundle inspection/publishing — see `gateway/auth.py`'s `ADMIN_PREFIXES` for the full,
 authoritative access-control list.
+
+## Further reading
+
+* [NewBusiness/README.md](NewBusiness/README.md) — the New Business engine's own
+  isolation rule, data notes, and the serve-consistency issue that changed its
+  headline metric.
+* [DATA_REQUIREMENTS.md](DATA_REQUIREMENTS.md) — what raw data would take the
+  Renewals model from its current coverage to the full book.
+* [DEPLOYMENT_PLAN.md](DEPLOYMENT_PLAN.md) — the Azure App Service deployment plan
+  and its current status (not yet deployed).
+* [RUNBOOK.md](RUNBOOK.md) — the monthly retrain/publish procedure, once deployed.

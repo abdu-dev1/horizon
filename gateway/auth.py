@@ -22,9 +22,10 @@ Two modes, and the default is the safe one
     HORIZON_AUTH_MODE=dev        no sign-in; act as HORIZON_DEV_USER
 
 `dev` is the module default so that a plain `python gateway/run_app.py` works
-with no configuration, but the Dockerfile pins `easyauth` -- the container is
-the thing that actually gets deployed, so the artifact you ship is secure
-regardless of what the developer default is.
+with no configuration, but the deployed App Service has `HORIZON_AUTH_MODE=
+easyauth` set as an application setting -- that setting, not the source
+default, is what actually ships, so the running app is secure regardless of
+what a developer's local environment defaults to.
 
 In `easyauth` mode a request with no principal header is REJECTED rather than
 treated as anonymous. A missing header there does not mean "a guest"; it means
@@ -80,8 +81,8 @@ def resolve(headers) -> Identity | None:
         # Admin by default in dev. Withholding the role here would buy no
         # security -- dev mode already means "no sign-in at all" -- while
         # making the admin pages unreachable on localhost, which is where they
-        # get built. The boundary is the MODE, and the Dockerfile pins
-        # easyauth, so the deployed artifact never takes this branch.
+        # get built. The boundary is the MODE, and the deployed App Service is
+        # configured for easyauth, so the running app never takes this branch.
         # Set HORIZON_DEV_ADMIN=0 to check the standard-user view locally.
         dev_admin = os.environ.get("HORIZON_DEV_ADMIN", "1") != "0"
         return Identity(email=DEV_USER, is_admin=dev_admin)

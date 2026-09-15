@@ -21,10 +21,15 @@
 # error.
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import collect_all
+import os
+
+# SPECPATH (this file's own directory) is injected by PyInstaller into the
+# spec's globals -- used here instead of an absolute path so this builds on
+# any machine/username, not just the one it was authored on.
+REPO_ROOT = os.path.abspath(os.path.join(SPECPATH, '..', '..', '..'))
 
 datas = []
-seed_zip = 'C:/Users/AbdumalikDalerzoda/Desktop/ForecastEngine/NewBusiness/backend/build/embed_seed/seed_bundle.zip'
-import os
+seed_zip = os.path.join(SPECPATH, 'embed_seed', 'seed_bundle.zip')
 if os.path.exists(seed_zip):
     datas.append((seed_zip, '.'))
 
@@ -69,5 +74,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Users\\AbdumalikDalerzoda\\Desktop\\ForecastEngine\\icon.ico'],
+    icon=[os.path.join(REPO_ROOT, 'icon.ico')],
 )
